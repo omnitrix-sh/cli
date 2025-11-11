@@ -3,6 +3,8 @@ package repl
 import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/omnitrix-sh/cli/editor"
+	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 )
 
@@ -15,8 +17,8 @@ type EditorCmp interface {
 
 type editorCmp struct {
 	app        *app.App
-	editor     vimtea.Editor
-	editorMode vimtea.EditorMode
+	editor     editor.Editor
+	editorMode editor.EditorMode
 	sessionID  string
 	focused    bool
 	width      int
@@ -45,7 +47,7 @@ func (m *editorCmp) Init() tea.Cmd {
 
 func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case vimtea.EditorModeMsg:
+	case editor.EditorModeMsg:
 		m.editorMode = msg.Mode
 	case SelectedSessionMsg:
 		if msg.SessionID != m.sessionID {
@@ -57,17 +59,17 @@ func (m *editorCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyMsg:
 			switch {
 			case key.Matches(msg, keyMap.SendMessage):
-				if m.editorMode == vimtea.ModeNormal {
+				if m.editorMode == editor.ModeNormal {
 					return m, m.Send()
 				}
 			case key.Matches(msg, keyMap.SendMessageI):
-				if m.editorMode == vimtea.ModeInsert {
+				if m.editorMode == editor.ModeInsert {
 					return m, m.Send()
 				}
 			}
 		}
 		u, cmd := m.editor.Update(msg)
-		m.editor = u.(vimtea.Editor)
+		m.editor = u.(editor.Editor)
 		return m, cmd
 	}
 	return m, nil
@@ -123,6 +125,6 @@ func (m *editorCmp) View() string {
 func NewEditorCmp(app *app.App) EditorCmp {
 	return &editorCmp{
 		app:    app,
-		editor: vimtea.NewEditor(),
+		editor: editor.NewEditor(),
 	}
 }

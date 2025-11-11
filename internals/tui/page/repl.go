@@ -2,6 +2,7 @@ package page
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/tui/components/repl"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 )

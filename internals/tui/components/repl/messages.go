@@ -2,6 +2,7 @@ package repl
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/omnitrix-sh/cli/internals/app"
 )
 
 type messagesCmp struct {

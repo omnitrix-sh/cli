@@ -5,6 +5,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/internals/tui/components/core"
+	"github.com/omnitrix-sh/cli/internals/tui/layout"
+	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	util "github.com/omnitrix-sh/cli/internals/utils"
 
 	"github.com/charmbracelet/huh"
