@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/omnitrix-sh/cli/internals/app"
 	session "github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"

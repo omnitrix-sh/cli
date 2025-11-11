@@ -12,11 +12,9 @@ import (
 )
 
 type App struct {
-	Context context.Context
-
+	Context  context.Context
 	Sessions session.Service
-
-	Logger logging.Interface
+	Logger   logging.Interface
 }
 
 func New(ctx context.Context, conn *sql.DB) *App {
