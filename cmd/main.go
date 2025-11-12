@@ -6,9 +6,10 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/database"
-	"github.com/omnitrix-sh/cli/internals/llm/models"
+	agent "github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -37,15 +38,19 @@ var rootCmd = &cobra.Command{
 
 		app := app.New(ctx, conn)
 		app.Logger.Info("Starting omnitrix...")
+		zone.NewGlobal()
 		tui := tea.NewProgram(
 			tui.New(app),
 			tea.WithAltScreen(),
+			tea.WithMouseCellMotion(),
 		)
 		app.Logger.Info("Setting up subscriptions...")
 		ch, unsub := setupSubscriptions(app)
 		defer unsub()
 
 		go func() {
+			// Set this up once
+			agent.GetMcpTools(ctx)
 			for msg := range ch {
 				tui.Send(msg)
 			}
@@ -62,7 +67,7 @@ func setupSubscriptions(app *app.App) (chan tea.Msg, func()) {
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(app.Context)
 
-	if viper.GetBool("debug") {
+	{
 		sub := app.Logger.Subscribe(ctx)
 		wg.Add(1)
 		go func() {
@@ -83,7 +88,17 @@ func setupSubscriptions(app *app.App) (chan tea.Msg, func()) {
 		}()
 	}
 	{
-		sub := app.LLM.Subscribe(ctx)
+		sub := app.Messages.Subscribe(ctx)
+		wg.Add(1)
+		go func() {
+			for ev := range sub {
+				ch <- ev
+			}
+			wg.Done()
+		}()
+	}
+	{
+		sub := app.Permissions.Subscribe(ctx)
 		wg.Add(1)
 		go func() {
 			for ev := range sub {
@@ -99,8 +114,6 @@ func setupSubscriptions(app *app.App) (chan tea.Msg, func()) {
 	}
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -108,41 +121,7 @@ func Execute() {
 	}
 }
 
-func loadConfig() {
-	viper.SetConfigName(".omnitrix")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("$HOME")
-	viper.AddConfigPath("$XDG_CONFIG_HOME/omnitrix")
-	viper.AddConfigPath(".")
-	viper.SetEnvPrefix("OMNITRIX")
-	// SET DEFAULTS
-	viper.SetDefault("log.level", "info")
-	viper.SetDefault("data.dir", ".omnitrix")
-
-	// LLM
-	viper.SetDefault("models.big", string(models.DefaultBigModel))
-	viper.SetDefault("models.little", string(models.DefaultLittleModel))
-	viper.SetDefault("providers.openai.key", os.Getenv("OPENAI_API_KEY"))
-	viper.SetDefault("providers.anthropic.key", os.Getenv("ANTHROPIC_API_KEY"))
-	viper.SetDefault("providers.common.max_tokens", 4000)
-
-	viper.SetDefault("agents.default", "coder")
-
-	//
-	viper.ReadInConfig()
-	workdir, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	viper.Set("wd", workdir)
-}
-
 func init() {
-	loadConfig()
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("debug", "d", false, "Help")
 }

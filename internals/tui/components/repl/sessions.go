@@ -2,10 +2,12 @@ package repl
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 	session "github.com/omnitrix-sh/cli/internals/sessions"
@@ -82,19 +84,35 @@ func (i *sessionsCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = listItem{
 				id:    s.ID,
 				title: s.Title,
-				desc:  fmt.Sprintf("Tokens: %d, Cost: %.2f", s.PromptTokens+s.CompletionTokens, s.Cost),
+				desc:  formatTokensAndCost(s.PromptTokens+s.CompletionTokens, s.Cost),
 			}
 		}
 		return i, i.list.SetItems(items)
 	case pubsub.Event[session.Session]:
-		if msg.Type == pubsub.UpdatedEvent {
+		if msg.Type == pubsub.CreatedEvent && msg.Payload.ParentSessionID == "" {
+			// Check if the session is already in the list
+			items := i.list.Items()
+			for _, item := range items {
+				s := item.(listItem)
+				if s.id == msg.Payload.ID {
+					return i, nil
+				}
+			}
+			// insert the new session at the top of the list
+			items = append([]list.Item{listItem{
+				id:    msg.Payload.ID,
+				title: msg.Payload.Title,
+				desc:  formatTokensAndCost(msg.Payload.PromptTokens+msg.Payload.CompletionTokens, msg.Payload.Cost),
+			}}, items...)
+			return i, i.list.SetItems(items)
+		} else if msg.Type == pubsub.UpdatedEvent {
 			// update the session in the list
 			items := i.list.Items()
 			for idx, item := range items {
 				s := item.(listItem)
 				if s.id == msg.Payload.ID {
 					s.title = msg.Payload.Title
-					s.desc = fmt.Sprintf("Tokens: %d, Cost: %.2f", msg.Payload.PromptTokens+msg.Payload.CompletionTokens, msg.Payload.Cost)
+					s.desc = formatTokensAndCost(msg.Payload.PromptTokens+msg.Payload.CompletionTokens, msg.Payload.Cost)
 					items[idx] = s
 					break
 				}
@@ -159,14 +177,45 @@ func (i *sessionsCmp) BorderText() map[layout.BorderPosition]string {
 		current,
 		totalCount,
 	)
+
+	title := "Sessions"
+	if i.focused {
+		title = lipgloss.NewStyle().Foreground(styles.Primary).Render(title)
+	}
 	return map[layout.BorderPosition]string{
-		layout.TopMiddleBorder:    "Sessions",
+		layout.TopMiddleBorder:    title,
 		layout.BottomMiddleBorder: pageInfo,
 	}
 }
 
 func (i *sessionsCmp) BindingKeys() []key.Binding {
 	return append(layout.KeyMapToSlice(i.list.KeyMap), sessionKeyMapValue.Select)
+}
+
+func formatTokensAndCost(tokens int64, cost float64) string {
+	// Format tokens in human-readable format (e.g., 110K, 1.2M)
+	var formattedTokens string
+	switch {
+	case tokens >= 1_000_000:
+		formattedTokens = fmt.Sprintf("%.1fM", float64(tokens)/1_000_000)
+	case tokens >= 1_000:
+		formattedTokens = fmt.Sprintf("%.1fK", float64(tokens)/1_000)
+	default:
+		formattedTokens = fmt.Sprintf("%d", tokens)
+	}
+
+	// Remove .0 suffix if present
+	if strings.HasSuffix(formattedTokens, ".0K") {
+		formattedTokens = strings.Replace(formattedTokens, ".0K", "K", 1)
+	}
+	if strings.HasSuffix(formattedTokens, ".0M") {
+		formattedTokens = strings.Replace(formattedTokens, ".0M", "M", 1)
+	}
+
+	// Format cost with $ symbol and 2 decimal places
+	formattedCost := fmt.Sprintf("$%.2f", cost)
+
+	return fmt.Sprintf("Tokens: %s, Cost: %s", formattedTokens, formattedCost)
 }
 
 func NewSessionsCmp(app *app.App) SessionsCmp {

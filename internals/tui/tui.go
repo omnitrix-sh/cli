@@ -1,17 +1,16 @@
 package tui
 
 import (
-	"log"
-
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/editor"
 	"github.com/omnitrix-sh/cli/internals/app"
-	"github.com/omnitrix-sh/cli/internals/llm"
+	permission "github.com/omnitrix-sh/cli/internals/permissions"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 	"github.com/omnitrix-sh/cli/internals/tui/components/core"
 	"github.com/omnitrix-sh/cli/internals/tui/components/dialog"
+	"github.com/omnitrix-sh/cli/internals/tui/components/repl"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 	"github.com/omnitrix-sh/cli/internals/tui/page"
 	util "github.com/omnitrix-sh/cli/internals/utils"
@@ -48,6 +47,11 @@ var keys = keyMap{
 	),
 }
 
+var replKeyMap = key.NewBinding(
+	key.WithKeys("N"),
+	key.WithHelp("N", "new session"),
+)
+
 type appModel struct {
 	width, height int
 	currentPage   page.PageID
@@ -57,6 +61,7 @@ type appModel struct {
 	status        tea.Model
 	help          core.HelpCmp
 	dialog        core.DialogCmp
+	app           *app.App
 	dialogVisible bool
 	editorMode    editor.EditorMode
 	showHelp      bool
@@ -70,12 +75,21 @@ func (a appModel) Init() tea.Cmd {
 
 func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case pubsub.Event[llm.AgentEvent]:
-		log.Println("Event received")
-		log.Println(msg)
+	case pubsub.Event[permission.PermissionRequest]:
+		return a, dialog.NewPermissionDialogCmd(msg.Payload)
+	case dialog.PermissionResponseMsg:
+		switch msg.Action {
+		case dialog.PermissionAllow:
+			permission.Default.Grant(msg.Permission)
+		case dialog.PermissionAllowForSession:
+			permission.Default.GrantPersistant(msg.Permission)
+		case dialog.PermissionDeny:
+			permission.Default.Deny(msg.Permission)
+		}
 	case editor.EditorModeMsg:
 		a.editorMode = msg.Mode
 	case tea.WindowSizeMsg:
+		var cmds []tea.Cmd
 		msg.Height -= 1 // Make space for the status bar
 		a.width, a.height = msg.Width, msg.Height
 
@@ -85,8 +99,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.help = uh.(core.HelpCmp)
 
 		p, cmd := a.pages[a.currentPage].Update(msg)
+		cmds = append(cmds, cmd)
 		a.pages[a.currentPage] = p
-		return a, cmd
+
+		d, cmd := a.dialog.Update(msg)
+		cmds = append(cmds, cmd)
+		a.dialog = d.(core.DialogCmp)
+
+		return a, tea.Batch(cmds...)
 	case core.DialogMsg:
 		d, cmd := a.dialog.Update(msg)
 		a.dialog = d.(core.DialogCmp)
@@ -97,6 +117,8 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.dialog = d.(core.DialogCmp)
 		a.dialogVisible = false
 		return a, cmd
+	case page.PageChangeMsg:
+		return a, a.moveToPage(msg.ID)
 	case util.InfoMsg:
 		a.status, _ = a.status.Update(msg)
 	case util.ErrorMsg:
@@ -114,6 +136,22 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.showHelp {
 					a.ToggleHelp()
 					return a, nil
+				}
+			case key.Matches(msg, replKeyMap):
+				if a.currentPage == page.ReplPage {
+					sessions, err := a.app.Sessions.List()
+					if err != nil {
+						return a, util.CmdHandler(util.ErrorMsg(err))
+					}
+					lastSession := sessions[0]
+					if lastSession.MessageCount == 0 {
+						return a, util.CmdHandler(repl.SelectedSessionMsg{SessionID: lastSession.ID})
+					}
+					s, err := a.app.Sessions.Create("New Session")
+					if err != nil {
+						return a, util.CmdHandler(util.ErrorMsg(err))
+					}
+					return a, util.CmdHandler(repl.SelectedSessionMsg{SessionID: s.ID})
 				}
 			case key.Matches(msg, keys.Logs):
 				return a, a.moveToPage(page.LogsPage)
@@ -175,6 +213,9 @@ func (a appModel) View() string {
 		if a.dialogVisible {
 			bindings = append(bindings, a.dialog.BindingKeys()...)
 		}
+		if a.currentPage == page.ReplPage {
+			bindings = append(bindings, replKeyMap)
+		}
 		a.help.SetBindings(bindings)
 		components = append(components, a.help.View())
 	}
@@ -201,12 +242,21 @@ func (a appModel) View() string {
 }
 
 func New(app *app.App) tea.Model {
+	// homedir, _ := os.UserHomeDir()
+	// configPath := filepath.Join(homedir, ".omnitrix.yaml")
+	//
+	startPage := page.ReplPage
+	// if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	// 	startPage = page.InitPage
+	// }
+
 	return &appModel{
-		currentPage: page.ReplPage,
+		currentPage: startPage,
 		loadedPages: make(map[page.PageID]bool),
 		status:      core.NewStatusCmp(),
 		help:        core.NewHelpCmp(),
 		dialog:      core.NewDialogCmp(),
+		app:         app,
 		pages: map[page.PageID]tea.Model{
 			page.LogsPage: page.NewLogsPage(),
 			page.InitPage: page.NewInitPage(),

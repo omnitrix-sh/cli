@@ -2,14 +2,16 @@ package session
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
-	db "github.com/omnitrix-sh/cli/internals/database"
+	"github.com/omnitrix-sh/cli/internals/database"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 )
 
 type Session struct {
 	ID               string
+	ParentSessionID  string
 	Title            string
 	MessageCount     int64
 	PromptTokens     int64
@@ -22,6 +24,7 @@ type Session struct {
 type Service interface {
 	pubsub.Suscriber[Session]
 	Create(title string) (Session, error)
+	CreateTaskSession(toolCallID, parentSessionID, title string) (Session, error)
 	Get(id string) (Session, error)
 	List() ([]Session, error)
 	Save(session Session) (Session, error)
@@ -30,14 +33,28 @@ type Service interface {
 
 type service struct {
 	*pubsub.Broker[Session]
-	q   db.Querier
+	q   database.Querier
 	ctx context.Context
 }
 
 func (s *service) Create(title string) (Session, error) {
-	dbSession, err := s.q.CreateSession(s.ctx, db.CreateSessionParams{
+	dbSession, err := s.q.CreateSession(s.ctx, database.CreateSessionParams{
 		ID:    uuid.New().String(),
 		Title: title,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	session := s.fromDBItem(dbSession)
+	s.Publish(pubsub.CreatedEvent, session)
+	return session, nil
+}
+
+func (s *service) CreateTaskSession(toolCallID, parentSessionID, title string) (Session, error) {
+	dbSession, err := s.q.CreateSession(s.ctx, database.CreateSessionParams{
+		ID:              toolCallID,
+		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
+		Title:           title,
 	})
 	if err != nil {
 		return Session{}, err
@@ -69,7 +86,7 @@ func (s *service) Get(id string) (Session, error) {
 }
 
 func (s *service) Save(session Session) (Session, error) {
-	dbSession, err := s.q.UpdateSession(s.ctx, db.UpdateSessionParams{
+	dbSession, err := s.q.UpdateSession(s.ctx, database.UpdateSessionParams{
 		ID:               session.ID,
 		Title:            session.Title,
 		PromptTokens:     session.PromptTokens,
@@ -96,9 +113,10 @@ func (s *service) List() ([]Session, error) {
 	return sessions, nil
 }
 
-func (s service) fromDBItem(item db.Session) Session {
+func (s service) fromDBItem(item database.Session) Session {
 	return Session{
 		ID:               item.ID,
+		ParentSessionID:  item.ParentSessionID.String,
 		Title:            item.Title,
 		MessageCount:     item.MessageCount,
 		PromptTokens:     item.PromptTokens,
@@ -109,7 +127,7 @@ func (s service) fromDBItem(item db.Session) Session {
 	}
 }
 
-func NewService(ctx context.Context, q db.Querier) Service {
+func NewService(ctx context.Context, q database.Querier) Service {
 	broker := pubsub.NewBroker[Session]()
 	return &service{
 		broker,

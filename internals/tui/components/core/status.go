@@ -3,6 +3,8 @@ package core
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/omnitrix-sh/cli/internals/config"
+	"github.com/omnitrix-sh/cli/internals/llm/models"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	util "github.com/omnitrix-sh/cli/internals/utils"
 	"github.com/omnitrix-sh/cli/internals/version"
@@ -57,14 +59,19 @@ func (m statusCmp) View() string {
 			Width(m.availableFooterMsgWidth()).
 			Render(m.info)
 	}
-
+	status += m.model()
 	status += versionWidget
 	return status
 }
 
 func (m statusCmp) availableFooterMsgWidth() int {
 	// -2 to accommodate padding
-	return max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(versionWidget))
+	return max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(versionWidget)-lipgloss.Width(m.model()))
+}
+
+func (m statusCmp) model() string {
+	model := models.SupportedModels[config.Get().Model.Coder]
+	return styles.Padded.Background(styles.Grey).Foreground(styles.Text).Render(model.Name)
 }
 
 func NewStatusCmp() tea.Model {

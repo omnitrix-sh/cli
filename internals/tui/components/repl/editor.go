@@ -5,10 +5,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/cloudwego/eino/schema"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/editor"
 	"github.com/omnitrix-sh/cli/internals/app"
+	agent "github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
+	"github.com/omnitrix-sh/cli/internals/tui/styles"
+	util "github.com/omnitrix-sh/cli/internals/utils"
 )
 
 type EditorCmp interface {
@@ -105,8 +108,12 @@ func (m *editorCmp) Blur() tea.Cmd {
 }
 
 func (m *editorCmp) BorderText() map[layout.BorderPosition]string {
+	title := "New Message"
+	if m.focused {
+		title = lipgloss.NewStyle().Foreground(styles.Primary).Render(title)
+	}
 	return map[layout.BorderPosition]string{
-		layout.TopLeftBorder: "New Message",
+		layout.BottomLeftBorder: title,
 	}
 }
 
@@ -131,9 +138,15 @@ func (m *editorCmp) SetSize(width int, height int) {
 
 func (m *editorCmp) Send() tea.Cmd {
 	return func() tea.Msg {
+		messages, _ := m.app.Messages.List(m.sessionID)
+		if hasUnfinishedMessages(messages) {
+			return util.InfoMsg("Assistant is still working on the previous message")
+		}
+		a, _ := agent.NewCoderAgent(m.app)
+
 		content := strings.Join(m.editor.GetBuffer().Lines(), "\n")
-		m.app.Messages.Create(m.sessionID, *schema.UserMessage(content))
-		m.app.LLM.SendRequest(m.sessionID, content)
+		go a.Generate(m.sessionID, content)
+
 		return m.editor.Reset()
 	}
 }
@@ -147,8 +160,11 @@ func (m *editorCmp) BindingKeys() []key.Binding {
 }
 
 func NewEditorCmp(app *app.App) EditorCmp {
+	editor := editor.NewEditor(
+		editor.WithFileName("message.md"),
+	)
 	return &editorCmp{
 		app:    app,
-		editor: editor.NewEditor(),
+		editor: editor,
 	}
 }
