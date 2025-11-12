@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"log"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/editor"
 	"github.com/omnitrix-sh/cli/internals/app"
+	"github.com/omnitrix-sh/cli/internals/llm"
+	"github.com/omnitrix-sh/cli/internals/pubsub"
 	"github.com/omnitrix-sh/cli/internals/tui/components/core"
 	"github.com/omnitrix-sh/cli/internals/tui/components/dialog"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
@@ -66,10 +70,13 @@ func (a appModel) Init() tea.Cmd {
 
 func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case pubsub.Event[llm.AgentEvent]:
+		log.Println("Event received")
+		log.Println(msg)
 	case editor.EditorModeMsg:
 		a.editorMode = msg.Mode
 	case tea.WindowSizeMsg:
-		msg.Height -= 1
+		msg.Height -= 1 // Make space for the status bar
 		a.width, a.height = msg.Width, msg.Height
 
 		a.status, _ = a.status.Update(msg)

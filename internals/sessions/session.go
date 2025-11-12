@@ -4,18 +4,19 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/omnitrix-sh/cli/internals/database"
+	db "github.com/omnitrix-sh/cli/internals/database"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 )
 
 type Session struct {
-	ID           string
-	Title        string
-	MessageCount int64
-	Tokens       int64
-	Cost         float64
-	CreatedAt    int64
-	UpdatedAt    int64
+	ID               string
+	Title            string
+	MessageCount     int64
+	PromptTokens     int64
+	CompletionTokens int64
+	Cost             float64
+	CreatedAt        int64
+	UpdatedAt        int64
 }
 
 type Service interface {
@@ -29,12 +30,12 @@ type Service interface {
 
 type service struct {
 	*pubsub.Broker[Session]
-	q   database.Querier
+	q   db.Querier
 	ctx context.Context
 }
 
 func (s *service) Create(title string) (Session, error) {
-	dbSession, err := s.q.CreateSession(s.ctx, database.CreateSessionParams{
+	dbSession, err := s.q.CreateSession(s.ctx, db.CreateSessionParams{
 		ID:    uuid.New().String(),
 		Title: title,
 	})
@@ -68,11 +69,12 @@ func (s *service) Get(id string) (Session, error) {
 }
 
 func (s *service) Save(session Session) (Session, error) {
-	dbSession, err := s.q.UpdateSession(s.ctx, database.UpdateSessionParams{
-		ID:     session.ID,
-		Title:  session.Title,
-		Tokens: session.Tokens,
-		Cost:   session.Cost,
+	dbSession, err := s.q.UpdateSession(s.ctx, db.UpdateSessionParams{
+		ID:               session.ID,
+		Title:            session.Title,
+		PromptTokens:     session.PromptTokens,
+		CompletionTokens: session.CompletionTokens,
+		Cost:             session.Cost,
 	})
 	if err != nil {
 		return Session{}, err
@@ -94,19 +96,20 @@ func (s *service) List() ([]Session, error) {
 	return sessions, nil
 }
 
-func (s service) fromDBItem(item database.Session) Session {
+func (s service) fromDBItem(item db.Session) Session {
 	return Session{
-		ID:           item.ID,
-		Title:        item.Title,
-		MessageCount: item.MessageCount,
-		Tokens:       item.Tokens,
-		Cost:         item.Cost,
-		CreatedAt:    item.CreatedAt,
-		UpdatedAt:    item.UpdatedAt,
+		ID:               item.ID,
+		Title:            item.Title,
+		MessageCount:     item.MessageCount,
+		PromptTokens:     item.PromptTokens,
+		CompletionTokens: item.CompletionTokens,
+		Cost:             item.Cost,
+		CreatedAt:        item.CreatedAt,
+		UpdatedAt:        item.UpdatedAt,
 	}
 }
 
-func NewService(ctx context.Context, q database.Querier) Service {
+func NewService(ctx context.Context, q db.Querier) Service {
 	broker := pubsub.NewBroker[Session]()
 	return &service{
 		broker,

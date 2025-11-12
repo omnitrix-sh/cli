@@ -1,6 +1,3 @@
-/*
-Copyright © 2025 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -11,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/database"
+	"github.com/omnitrix-sh/cli/internals/llm/models"
 	"github.com/omnitrix-sh/cli/internals/tui"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -38,7 +36,7 @@ var rootCmd = &cobra.Command{
 		ctx := context.Background()
 
 		app := app.New(ctx, conn)
-		app.Logger.Info("Starting termai...")
+		app.Logger.Info("Starting omnitrix...")
 		tui := tea.NewProgram(
 			tui.New(app),
 			tea.WithAltScreen(),
@@ -84,6 +82,16 @@ func setupSubscriptions(app *app.App) (chan tea.Msg, func()) {
 			wg.Done()
 		}()
 	}
+	{
+		sub := app.LLM.Subscribe(ctx)
+		wg.Add(1)
+		go func() {
+			for ev := range sub {
+				ch <- ev
+			}
+			wg.Done()
+		}()
+	}
 	return ch, func() {
 		cancel()
 		wg.Wait()
@@ -111,8 +119,22 @@ func loadConfig() {
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("data.dir", ".omnitrix")
 
+	// LLM
+	viper.SetDefault("models.big", string(models.DefaultBigModel))
+	viper.SetDefault("models.little", string(models.DefaultLittleModel))
+	viper.SetDefault("providers.openai.key", os.Getenv("OPENAI_API_KEY"))
+	viper.SetDefault("providers.anthropic.key", os.Getenv("ANTHROPIC_API_KEY"))
+	viper.SetDefault("providers.common.max_tokens", 4000)
+
+	viper.SetDefault("agents.default", "coder")
+
 	//
 	viper.ReadInConfig()
+	workdir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	viper.Set("wd", workdir)
 }
 
 func init() {
