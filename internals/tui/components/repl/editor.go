@@ -142,7 +142,10 @@ func (m *editorCmp) Send() tea.Cmd {
 		if hasUnfinishedMessages(messages) {
 			return util.ReportWarn("Assistant is still working on the previous message")
 		}
-		a, _ := agent.NewCoderAgent(m.app)
+		a, err := agent.NewCoderAgent(m.app)
+		if err != nil {
+			return util.ReportError(err)
+		}
 
 		content := strings.Join(m.editor.GetBuffer().Lines(), "\n")
 		go a.Generate(m.sessionID, content)
