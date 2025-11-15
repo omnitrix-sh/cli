@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/omnitrix-sh/cli/internals/config"
+	"github.com/omnitrix-sh/cli/internals/lsp"
 	permission "github.com/omnitrix-sh/cli/internals/permissions"
 )
 
-type writeTool struct{}
+type writeTool struct {
+	lspClients map[string]*lsp.Client
+}
 
 const (
 	WriteToolName = "write"
@@ -96,6 +99,16 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	if err = os.MkdirAll(dir, 0o755); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("Failed to create parent directories: %s", err)), nil
 	}
+
+	// Get old content for diff if file exists
+	oldContent := ""
+	if fileInfo != nil && !fileInfo.IsDir() {
+		oldBytes, readErr := os.ReadFile(filePath)
+		if readErr == nil {
+			oldContent = string(oldBytes)
+		}
+	}
+
 	p := permission.Default.Request(
 		permission.CreatePermissionRequest{
 			Path:        filePath,
@@ -104,7 +117,7 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			Description: fmt.Sprintf("Create file %s", filePath),
 			Params: WritePermissionsParams{
 				FilePath: filePath,
-				Content:  GenerateDiff("", params.Content),
+				Content:  GenerateDiff(oldContent, params.Content),
 			},
 		},
 	)
@@ -121,8 +134,13 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	// Record the file write
 	recordFileWrite(filePath)
 	recordFileRead(filePath)
+	// Wait for LSP diagnostics after writing the file
+	waitForLspDiagnostics(ctx, filePath, w.lspClients)
 
-	return NewTextResponse(fmt.Sprintf("File successfully written: %s", filePath)), nil
+	result := fmt.Sprintf("File successfully written: %s", filePath)
+	result = fmt.Sprintf("<result>\n%s\n</result>", result)
+	result += appendDiagnostics(filePath, w.lspClients)
+	return NewTextResponse(result), nil
 }
 
 func writeDescription() string {
@@ -156,6 +174,8 @@ TIPS:
 - Always include descriptive comments when making changes to existing code`
 }
 
-func NewWriteTool() BaseTool {
-	return &writeTool{}
+func NewWriteTool(lspClients map[string]*lsp.Client) BaseTool {
+	return &writeTool{
+		lspClients,
+	}
 }

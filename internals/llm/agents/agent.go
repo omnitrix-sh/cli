@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/omnitrix-sh/cli/internals/app"
@@ -14,6 +15,8 @@ import (
 	"github.com/omnitrix-sh/cli/internals/llm/provider"
 	"github.com/omnitrix-sh/cli/internals/llm/tools"
 	"github.com/omnitrix-sh/cli/internals/message"
+	"github.com/omnitrix-sh/cli/internals/pubsub"
+	util "github.com/omnitrix-sh/cli/internals/utils"
 )
 
 type Agent interface {
@@ -33,8 +36,12 @@ func (c *agent) handleTitleGeneration(sessionID, content string) {
 		c.Context,
 		[]message.Message{
 			{
-				Role:    message.User,
-				Content: content,
+				Role: message.User,
+				Parts: []message.ContentPart{
+					message.TextContent{
+						Text: content,
+					},
+				},
 			},
 		},
 		nil,
@@ -49,6 +56,8 @@ func (c *agent) handleTitleGeneration(sessionID, content string) {
 	}
 	if response.Content != "" {
 		session.Title = response.Content
+		session.Title = strings.TrimSpace(session.Title)
+		session.Title = strings.ReplaceAll(session.Title, "\n", " ")
 		c.Sessions.Save(session)
 	}
 }
@@ -79,17 +88,33 @@ func (c *agent) processEvent(
 ) error {
 	switch event.Type {
 	case provider.EventThinkingDelta:
-		assistantMsg.Thinking += event.Thinking
+		assistantMsg.AppendReasoningContent(event.Content)
 		return c.Messages.Update(*assistantMsg)
 	case provider.EventContentDelta:
-		assistantMsg.Content += event.Content
+		assistantMsg.AppendContent(event.Content)
 		return c.Messages.Update(*assistantMsg)
 	case provider.EventError:
+		// TODO: remove when realease
 		log.Println("error", event.Error)
+		c.App.Status.Publish(pubsub.UpdatedEvent, util.InfoMsg{
+			Type: util.InfoTypeError,
+			Msg:  event.Error.Error(),
+		})
 		return event.Error
-
+	case provider.EventWarning:
+		c.App.Status.Publish(pubsub.UpdatedEvent, util.InfoMsg{
+			Type: util.InfoTypeWarn,
+			Msg:  event.Info,
+		})
+		return nil
+	case provider.EventInfo:
+		c.App.Status.Publish(pubsub.UpdatedEvent, util.InfoMsg{
+			Type: util.InfoTypeInfo,
+			Msg:  event.Info,
+		})
 	case provider.EventComplete:
-		assistantMsg.ToolCalls = event.Response.ToolCalls
+		assistantMsg.SetToolCalls(event.Response.ToolCalls)
+		assistantMsg.AddFinish(event.Response.FinishReason)
 		err := c.Messages.Update(*assistantMsg)
 		if err != nil {
 			return err
@@ -157,18 +182,21 @@ func (c *agent) handleToolExecution(
 	ctx context.Context,
 	assistantMsg message.Message,
 ) (*message.Message, error) {
-	if len(assistantMsg.ToolCalls) == 0 {
+	if len(assistantMsg.ToolCalls()) == 0 {
 		return nil, nil
 	}
 
-	toolResults, err := c.ExecuteTools(ctx, assistantMsg.ToolCalls, c.tools)
+	toolResults, err := c.ExecuteTools(ctx, assistantMsg.ToolCalls(), c.tools)
 	if err != nil {
 		return nil, err
 	}
-
+	parts := make([]message.ContentPart, 0)
+	for _, toolResult := range toolResults {
+		parts = append(parts, toolResult)
+	}
 	msg, err := c.Messages.Create(assistantMsg.SessionID, message.CreateMessageParams{
-		Role:        message.Tool,
-		ToolResults: toolResults,
+		Role:  message.Tool,
+		Parts: parts,
 	})
 
 	return &msg, err
@@ -185,8 +213,12 @@ func (c *agent) generate(sessionID string, content string) error {
 	}
 
 	userMsg, err := c.Messages.Create(sessionID, message.CreateMessageParams{
-		Role:    message.User,
-		Content: content,
+		Role: message.User,
+		Parts: []message.ContentPart{
+			message.TextContent{
+				Text: content,
+			},
+		},
 	})
 	if err != nil {
 		return err
@@ -201,8 +233,8 @@ func (c *agent) generate(sessionID string, content string) error {
 		}
 
 		assistantMsg, err := c.Messages.Create(sessionID, message.CreateMessageParams{
-			Role:    message.Assistant,
-			Content: "",
+			Role:  message.Assistant,
+			Parts: []message.ContentPart{},
 		})
 		if err != nil {
 			return err
@@ -210,20 +242,20 @@ func (c *agent) generate(sessionID string, content string) error {
 		for event := range eventChan {
 			err = c.processEvent(sessionID, &assistantMsg, event)
 			if err != nil {
-				assistantMsg.Finished = true
+				assistantMsg.AddFinish("error:" + err.Error())
 				c.Messages.Update(assistantMsg)
 				return err
 			}
 		}
 
 		msg, err := c.handleToolExecution(c.Context, assistantMsg)
-		assistantMsg.Finished = true
+
 		c.Messages.Update(assistantMsg)
 		if err != nil {
 			return err
 		}
 
-		if len(assistantMsg.ToolCalls) == 0 {
+		if len(assistantMsg.ToolCalls()) == 0 {
 			break
 		}
 

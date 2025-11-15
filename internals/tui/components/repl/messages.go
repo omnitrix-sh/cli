@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/internals/app"
 	agent "github.com/omnitrix-sh/cli/internals/llm/agents"
+	"github.com/omnitrix-sh/cli/internals/lsp/protocol"
 	"github.com/omnitrix-sh/cli/internals/message"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 	session "github.com/omnitrix-sh/cli/internals/sessions"
@@ -51,7 +52,8 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 			}
 			for _, v := range m.messages {
-				for _, c := range v.ToolCalls {
+				for _, c := range v.ToolCalls() {
+					// the message is being added to the session of a tool called
 					if c.ID == msg.Payload.SessionID {
 						m.renderView()
 						m.viewport.GotoBottom()
@@ -130,12 +132,11 @@ func hasUnfinishedMessages(messages []message.Message) bool {
 		return false
 	}
 	for _, msg := range messages {
-		if !msg.Finished {
+		if !msg.IsFinished() {
 			return true
 		}
 	}
-	lastMessage := messages[len(messages)-1]
-	return lastMessage.Role != message.Assistant
+	return false
 }
 
 func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.ToolCall, futureMessages []message.Message) string {
@@ -205,7 +206,7 @@ func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.
 	findToolResult := func(toolCallID string, messages []message.Message) *message.ToolResult {
 		for _, msg := range messages {
 			if msg.Role == message.Tool {
-				for _, result := range msg.ToolResults {
+				for _, result := range msg.ToolResults() {
 					if result.ToolCallID == toolCallID {
 						return &result
 					}
@@ -220,11 +221,15 @@ func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.
 			Bold(true).
 			Foreground(styles.Green).
 			Render(fmt.Sprintf("%s Result", styles.CheckIcon))
+
+		// Use the same style for both header and border if it's an error
+		borderColor := styles.Green
 		if result.IsError {
 			resultHeader = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(styles.Red).
 				Render(fmt.Sprintf("%s Error", styles.ErrorIcon))
+			borderColor = styles.Red
 		}
 
 		truncate := 200
@@ -234,7 +239,7 @@ func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.
 		}
 
 		resultContent := lipgloss.JoinVertical(lipgloss.Left, resultHeader, content)
-		return toolResultStyle.Render(resultContent)
+		return toolResultStyle.BorderForeground(borderColor).Render(resultContent)
 	}
 
 	connector := connectorStyle.Render("└─> Tool Calls:")
@@ -257,7 +262,7 @@ func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.
 			taskSessionMessages, _ := m.app.Messages.List(toolCall.ID)
 			for _, msg := range taskSessionMessages {
 				if msg.Role == message.Assistant {
-					for _, toolCall := range msg.ToolCalls {
+					for _, toolCall := range msg.ToolCalls() {
 						toolHeader := lipgloss.NewStyle().
 							Bold(true).
 							Foreground(styles.Blue).
@@ -304,11 +309,11 @@ func (m *messagesCmp) renderMessageWithToolCall(content string, tools []message.
 	}
 
 	for _, msg := range futureMessages {
-		if msg.Content != "" {
+		if msg.Content().String() != "" {
 			break
 		}
 
-		for _, toolCall := range msg.ToolCalls {
+		for _, toolCall := range msg.ToolCalls() {
 			toolOutput := renderTool(toolCall)
 			allParts = append(allParts, "    "+strings.ReplaceAll(toolOutput, "\n", "\n    "))
 
@@ -339,10 +344,10 @@ func (m *messagesCmp) renderView() {
 
 	prevMessageWasUser := false
 	for inx, msg := range m.messages {
-		content := msg.Content
+		content := msg.Content().String()
 		if content != "" || prevMessageWasUser {
-			if msg.Thinking != "" && content == "" {
-				content = msg.Thinking
+			if msg.ReasoningContent().String() != "" && content == "" {
+				content = msg.ReasoningContent().String()
 			} else if content == "" {
 				content = "..."
 			}
@@ -367,14 +372,14 @@ func (m *messagesCmp) renderView() {
 					EmbeddedText:   borderText(msg.Role, currentMessage),
 				},
 			)
-			if len(msg.ToolCalls) > 0 {
-				content = m.renderMessageWithToolCall(content, msg.ToolCalls, m.messages[inx+1:])
+			if len(msg.ToolCalls()) > 0 {
+				content = m.renderMessageWithToolCall(content, msg.ToolCalls(), m.messages[inx+1:])
 			}
 			stringMessages = append(stringMessages, content)
 			currentMessage++
 			displayedMsgCount++
 		}
-		if msg.Role == message.User && msg.Content != "" {
+		if msg.Role == message.User && msg.Content().String() != "" {
 			prevMessageWasUser = true
 		} else {
 			prevMessageWasUser = false
@@ -398,6 +403,54 @@ func (m *messagesCmp) Blur() tea.Cmd {
 	return nil
 }
 
+func (m *messagesCmp) projectDiagnostics() string {
+	errorDiagnostics := []protocol.Diagnostic{}
+	warnDiagnostics := []protocol.Diagnostic{}
+	hintDiagnostics := []protocol.Diagnostic{}
+	infoDiagnostics := []protocol.Diagnostic{}
+	for _, client := range m.app.LSPClients {
+		for _, d := range client.GetDiagnostics() {
+			for _, diag := range d {
+				switch diag.Severity {
+				case protocol.SeverityError:
+					errorDiagnostics = append(errorDiagnostics, diag)
+				case protocol.SeverityWarning:
+					warnDiagnostics = append(warnDiagnostics, diag)
+				case protocol.SeverityHint:
+					hintDiagnostics = append(hintDiagnostics, diag)
+				case protocol.SeverityInformation:
+					infoDiagnostics = append(infoDiagnostics, diag)
+				}
+			}
+		}
+	}
+
+	if len(errorDiagnostics) == 0 && len(warnDiagnostics) == 0 && len(hintDiagnostics) == 0 && len(infoDiagnostics) == 0 {
+		return "No diagnostics"
+	}
+
+	diagnostics := []string{}
+
+	if len(errorDiagnostics) > 0 {
+		errStr := lipgloss.NewStyle().Foreground(styles.Error).Render(fmt.Sprintf("%s %d", styles.ErrorIcon, len(errorDiagnostics)))
+		diagnostics = append(diagnostics, errStr)
+	}
+	if len(warnDiagnostics) > 0 {
+		warnStr := lipgloss.NewStyle().Foreground(styles.Warning).Render(fmt.Sprintf("%s %d", styles.WarningIcon, len(warnDiagnostics)))
+		diagnostics = append(diagnostics, warnStr)
+	}
+	if len(hintDiagnostics) > 0 {
+		hintStr := lipgloss.NewStyle().Foreground(styles.Text).Render(fmt.Sprintf("%s %d", styles.HintIcon, len(hintDiagnostics)))
+		diagnostics = append(diagnostics, hintStr)
+	}
+	if len(infoDiagnostics) > 0 {
+		infoStr := lipgloss.NewStyle().Foreground(styles.Peach).Render(fmt.Sprintf("%s %d", styles.InfoIcon, len(infoDiagnostics)))
+		diagnostics = append(diagnostics, infoStr)
+	}
+
+	return strings.Join(diagnostics, " ")
+}
+
 func (m *messagesCmp) BorderText() map[layout.BorderPosition]string {
 	title := m.session.Title
 	titleWidth := m.width / 2
@@ -409,7 +462,7 @@ func (m *messagesCmp) BorderText() map[layout.BorderPosition]string {
 	}
 	borderTest := map[layout.BorderPosition]string{
 		layout.TopLeftBorder:     title,
-		layout.BottomRightBorder: formatTokensAndCost(m.session.CompletionTokens+m.session.PromptTokens, m.session.Cost),
+		layout.BottomRightBorder: m.projectDiagnostics(),
 	}
 	if hasUnfinishedMessages(m.messages) {
 		borderTest[layout.BottomLeftBorder] = lipgloss.NewStyle().Foreground(styles.Peach).Render("Thinking...")

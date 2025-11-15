@@ -13,7 +13,7 @@ import (
 )
 
 func CoderOpenAISystemPrompt() string {
-	basePrompt := `You are termAI, an autonomous CLI-based software engineer. Your job is to reduce user effort by proactively reasoning, inferring context, and solving software engineering tasks end-to-end with minimal prompting.
+	basePrompt := `You are Omnitrix, an autonomous CLI-based software engineer. Your job is to reduce user effort by proactively reasoning, inferring context, and solving software engineering tasks end-to-end with minimal prompting.
 
 # Your mindset
 Act like a competent, efficient software engineer who is familiar with large codebases. You should:
@@ -67,11 +67,11 @@ Never commit changes unless the user explicitly asks you to.`
 
 	envInfo := getEnvironmentInfo()
 
-	return fmt.Sprintf("%s\n\n%s", basePrompt, envInfo)
+	return fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation())
 }
 
 func CoderAnthropicSystemPrompt() string {
-	basePrompt := `You are termAI, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
+	basePrompt := `You are Omnitrix, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
 IMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.
 
@@ -168,7 +168,7 @@ You MUST answer concisely with fewer than 4 lines of text (not including tool us
 
 	envInfo := getEnvironmentInfo()
 
-	return fmt.Sprintf("%s\n\n%s", basePrompt, envInfo)
+	return fmt.Sprintf("%s\n\n%s\n%s", basePrompt, envInfo, lspInformation())
 }
 
 func getEnvironmentInfo() string {
@@ -196,6 +196,26 @@ Today's date: %s
 func isGitRepo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
 	return err == nil
+}
+
+func lspInformation() string {
+	cfg := config.Get()
+	hasLSP := false
+	for _, v := range cfg.LSP {
+		if !v.Disabled {
+			hasLSP = true
+			break
+		}
+	}
+	if !hasLSP {
+		return ""
+	}
+	return `# LSP Information
+Tools that support it will also include useful diagnostics such as linting and typechecking.
+- These diagnostics will be automatically enabled when you run the tool, and will be displayed in the output at the bottom within the <file_diagnostics></file_diagnostics> and <project_diagnostics></project_diagnostics> tags.
+- Take necessary actions to fix the issues.
+- You should ignore diagnostics of files that you did not change or are not related or caused by your changes unless the user explicitly asks you to fix them.
+`
 }
 
 func boolToYesNo(b bool) string {

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/omnitrix-sh/cli/internals/app"
+	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/database"
 	agent "github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/tui"
@@ -30,6 +31,11 @@ var rootCmd = &cobra.Command{
 			viper.Set("log.level", "debug")
 		}
 
+		// Load configuration before connecting to database
+		if err := config.Load(debug); err != nil {
+			return err
+		}
+
 		conn, err := database.Connect()
 		if err != nil {
 			return err
@@ -37,6 +43,7 @@ var rootCmd = &cobra.Command{
 		ctx := context.Background()
 
 		app := app.New(ctx, conn)
+		defer app.Close()
 		app.Logger.Info("Starting omnitrix...")
 		zone.NewGlobal()
 		tui := tea.NewProgram(

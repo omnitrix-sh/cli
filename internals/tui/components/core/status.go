@@ -1,19 +1,29 @@
 package core
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/llm/models"
+	"github.com/omnitrix-sh/cli/internals/pubsub"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	util "github.com/omnitrix-sh/cli/internals/utils"
 	"github.com/omnitrix-sh/cli/internals/version"
 )
 
 type statusCmp struct {
-	err   error
-	info  string
-	width int
+	info       *util.InfoMsg
+	width      int
+	messageTTL time.Duration
+}
+
+// clearMessageCmd is a command that clears status messages after a timeout
+func (m statusCmp) clearMessageCmd() tea.Cmd {
+	return tea.Tick(m.messageTTL, func(time.Time) tea.Msg {
+		return util.ClearStatusMsg{}
+	})
 }
 
 func (m statusCmp) Init() tea.Cmd {
@@ -24,10 +34,15 @@ func (m statusCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-	case util.ErrorMsg:
-		m.err = msg
+		return m, m.clearMessageCmd()
+	case pubsub.Event[util.InfoMsg]:
+		m.info = &msg.Payload
+		return m, m.clearMessageCmd()
 	case util.InfoMsg:
-		m.info = string(msg)
+		m.info = &msg
+		return m, m.clearMessageCmd()
+	case util.ClearStatusMsg:
+		m.info = nil
 	}
 	return m, nil
 }
@@ -39,25 +54,25 @@ var (
 
 func (m statusCmp) View() string {
 	status := styles.Padded.Background(styles.Grey).Foreground(styles.Text).Render("? help")
-
-	if m.err != nil {
-		status += styles.Regular.Padding(0, 1).
-			Background(styles.Red).
-			Foreground(styles.Text).
-			Width(m.availableFooterMsgWidth()).
-			Render(m.err.Error())
-	} else if m.info != "" {
-		status += styles.Padded.
+	if m.info != nil {
+		infoStyle := styles.Padded.
 			Foreground(styles.Base).
-			Background(styles.Green).
-			Width(m.availableFooterMsgWidth()).
-			Render(m.info)
+			Width(m.availableFooterMsgWidth())
+		switch m.info.Type {
+		case util.InfoTypeInfo:
+			infoStyle = infoStyle.Background(styles.Blue)
+		case util.InfoTypeWarn:
+			infoStyle = infoStyle.Background(styles.Peach)
+		case util.InfoTypeError:
+			infoStyle = infoStyle.Background(styles.Red)
+		}
+		status += infoStyle.Render(m.info.Msg)
 	} else {
 		status += styles.Padded.
 			Foreground(styles.Base).
 			Background(styles.LightGrey).
 			Width(m.availableFooterMsgWidth()).
-			Render(m.info)
+			Render("")
 	}
 	status += m.model()
 	status += versionWidget
@@ -75,5 +90,7 @@ func (m statusCmp) model() string {
 }
 
 func NewStatusCmp() tea.Model {
-	return &statusCmp{}
+	return &statusCmp{
+		messageTTL: 15 * time.Second,
+	}
 }

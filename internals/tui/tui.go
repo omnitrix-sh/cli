@@ -77,6 +77,8 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case pubsub.Event[permission.PermissionRequest]:
 		return a, dialog.NewPermissionDialogCmd(msg.Payload)
+	case pubsub.Event[util.InfoMsg]:
+		a.status, _ = a.status.Update(msg)
 	case dialog.PermissionResponseMsg:
 		switch msg.Action {
 		case dialog.PermissionAllow:
@@ -121,8 +123,6 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.moveToPage(msg.ID)
 	case util.InfoMsg:
 		a.status, _ = a.status.Update(msg)
-	case util.ErrorMsg:
-		a.status, _ = a.status.Update(msg)
 	case tea.KeyMsg:
 		if a.editorMode == editor.ModeNormal {
 			switch {
@@ -141,7 +141,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.currentPage == page.ReplPage {
 					sessions, err := a.app.Sessions.List()
 					if err != nil {
-						return a, util.CmdHandler(util.ErrorMsg(err))
+						return a, util.CmdHandler(util.ReportError(err))
 					}
 					lastSession := sessions[0]
 					if lastSession.MessageCount == 0 {
@@ -149,7 +149,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					s, err := a.app.Sessions.Create("New Session")
 					if err != nil {
-						return a, util.CmdHandler(util.ErrorMsg(err))
+						return a, util.CmdHandler(util.ReportError(err))
 					}
 					return a, util.CmdHandler(repl.SelectedSessionMsg{SessionID: s.ID})
 				}
@@ -161,14 +161,21 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+
+	var cmds []tea.Cmd
+	s, cmd := a.status.Update(msg)
+	a.status = s
+	cmds = append(cmds, cmd)
 	if a.dialogVisible {
 		d, cmd := a.dialog.Update(msg)
 		a.dialog = d.(core.DialogCmp)
-		return a, cmd
+		cmds = append(cmds, cmd)
+		return a, tea.Batch(cmds...)
 	}
 	p, cmd := a.pages[a.currentPage].Update(msg)
 	a.pages[a.currentPage] = p
-	return a, cmd
+	cmds = append(cmds, cmd)
+	return a, tea.Batch(cmds...)
 }
 
 func (a *appModel) ToggleHelp() {

@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -64,6 +65,36 @@ type permissionDialogCmp struct {
 	selectOption    *huh.Select[string]
 }
 
+// formatDiff formats a diff string with colors for additions and deletions
+func formatDiff(diffText string) string {
+	lines := strings.Split(diffText, "\n")
+	var formattedLines []string
+
+	// Define styles for different line types
+	addStyle := lipgloss.NewStyle().Foreground(styles.Green)
+	removeStyle := lipgloss.NewStyle().Foreground(styles.Red)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Blue)
+	contextStyle := lipgloss.NewStyle().Foreground(styles.SubText0)
+
+	// Process each line
+	for _, line := range lines {
+		if strings.HasPrefix(line, "+") {
+			formattedLines = append(formattedLines, addStyle.Render(line))
+		} else if strings.HasPrefix(line, "-") {
+			formattedLines = append(formattedLines, removeStyle.Render(line))
+		} else if strings.HasPrefix(line, "Changes:") || strings.HasPrefix(line, "  ...") {
+			formattedLines = append(formattedLines, headerStyle.Render(line))
+		} else if strings.HasPrefix(line, "  ") {
+			formattedLines = append(formattedLines, contextStyle.Render(line))
+		} else {
+			formattedLines = append(formattedLines, line)
+		}
+	}
+
+	// Join all formatted lines
+	return strings.Join(formattedLines, "\n")
+}
+
 func (p *permissionDialogCmp) Init() tea.Cmd {
 	return nil
 }
@@ -79,10 +110,18 @@ func (p *permissionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.isViewportFocus = !p.isViewportFocus
 			if p.isViewportFocus {
 				p.selectOption.Blur()
+				// Add a visual indicator for focus change
+				cmds = append(cmds, tea.Batch(
+					util.ReportInfo("Viewing content - use arrow keys to scroll"),
+				))
 			} else {
 				p.selectOption.Focus()
+				// Add a visual indicator for focus change
+				cmds = append(cmds, tea.Batch(
+					util.CmdHandler(util.ReportInfo("Select an action")),
+				))
 			}
-			return p, nil
+			return p, tea.Batch(cmds...)
 		}
 	}
 
@@ -112,9 +151,10 @@ func (p *permissionDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (p *permissionDialogCmp) render() string {
-	form := p.form.View()
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.Rosewater)
 	valueStyle := lipgloss.NewStyle().Foreground(styles.Peach)
+
+	form := p.form.View()
 
 	headerParts := []string{
 		lipgloss.JoinHorizontal(lipgloss.Left, keyStyle.Render("Tool:"), " ", valueStyle.Render(p.permission.ToolName)),
@@ -122,44 +162,223 @@ func (p *permissionDialogCmp) render() string {
 		lipgloss.JoinHorizontal(lipgloss.Left, keyStyle.Render("Path:"), " ", valueStyle.Render(p.permission.Path)),
 		" ",
 	}
+
+	// Create the header content first so it can be used in all cases
+	headerContent := lipgloss.NewStyle().Padding(0, 1).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
+
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(styles.CatppuccinMarkdownStyle()),
 		glamour.WithWordWrap(p.width-10),
 		glamour.WithEmoji(),
 	)
-	content := ""
+
+	// Handle different tool types
 	switch p.permission.ToolName {
 	case tools.BashToolName:
 		pr := p.permission.Params.(tools.BashPermissionsParams)
 		headerParts = append(headerParts, keyStyle.Render("Command:"))
-		content, _ = r.Render(fmt.Sprintf("```bash\n%s\n```", pr.Command))
+		content := fmt.Sprintf("```bash\n%s\n```", pr.Command)
+
+		renderedContent, _ := r.Render(content)
+		p.contentViewPort.Width = p.width - 2 - 2
+
+		// Calculate content height dynamically based on content
+		contentLines := len(strings.Split(renderedContent, "\n"))
+		// Set a reasonable min/max for the viewport height
+		minContentHeight := 3
+		maxContentHeight := p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
+
+		// Add some padding to the content lines
+		contentHeight := contentLines + 2
+		contentHeight = max(contentHeight, minContentHeight)
+		contentHeight = min(contentHeight, maxContentHeight)
+		p.contentViewPort.Height = contentHeight
+
+		p.contentViewPort.SetContent(renderedContent)
+
+		// Style the viewport
+		var contentBorder lipgloss.Border
+		var borderColor lipgloss.TerminalColor
+
+		if p.isViewportFocus {
+			contentBorder = lipgloss.DoubleBorder()
+			borderColor = styles.Blue
+		} else {
+			contentBorder = lipgloss.RoundedBorder()
+			borderColor = styles.Flamingo
+		}
+
+		contentStyle := lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(0, 1).
+			Border(contentBorder).
+			BorderForeground(borderColor)
+
+		if p.isViewportFocus {
+			contentStyle = contentStyle.BorderBackground(styles.Surface0)
+		}
+
+		contentFinal := contentStyle.Render(p.contentViewPort.View())
+
+		return lipgloss.JoinVertical(
+			lipgloss.Top,
+			headerContent,
+			contentFinal,
+			form,
+		)
+
 	case tools.EditToolName:
 		pr := p.permission.Params.(tools.EditPermissionsParams)
-		headerParts = append(headerParts, keyStyle.Render("Update:"))
-		content, _ = r.Render(fmt.Sprintf("```diff\n%s\n```", pr.Diff))
+		headerParts = append(headerParts, keyStyle.Render("Update"))
+		// Recreate header content with the updated headerParts
+		headerContent = lipgloss.NewStyle().Padding(0, 1).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
+
+		// Format the diff with colors
+		formattedDiff := formatDiff(pr.Diff)
+
+		// Set up viewport for the diff content
+		p.contentViewPort.Width = p.width - 2 - 2
+
+		// Calculate content height dynamically based on window size
+		maxContentHeight := p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
+		p.contentViewPort.Height = maxContentHeight
+		p.contentViewPort.SetContent(formattedDiff)
+
+		// Style the viewport
+		var contentBorder lipgloss.Border
+		var borderColor lipgloss.TerminalColor
+
+		if p.isViewportFocus {
+			contentBorder = lipgloss.DoubleBorder()
+			borderColor = styles.Blue
+		} else {
+			contentBorder = lipgloss.RoundedBorder()
+			borderColor = styles.Flamingo
+		}
+
+		contentStyle := lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(0, 1).
+			Border(contentBorder).
+			BorderForeground(borderColor)
+
+		if p.isViewportFocus {
+			contentStyle = contentStyle.BorderBackground(styles.Surface0)
+		}
+
+		contentFinal := contentStyle.Render(p.contentViewPort.View())
+
+		return lipgloss.JoinVertical(
+			lipgloss.Top,
+			headerContent,
+			contentFinal,
+			form,
+		)
+
 	case tools.WriteToolName:
 		pr := p.permission.Params.(tools.WritePermissionsParams)
-		headerParts = append(headerParts, keyStyle.Render("Content:"))
-		content, _ = r.Render(fmt.Sprintf("```diff\n%s\n```", pr.Content))
-	default:
-		content, _ = r.Render(p.permission.Description)
-	}
-	headerContent := lipgloss.NewStyle().Padding(0, 1).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
-	p.contentViewPort.Width = p.width - 2 - 2
-	p.contentViewPort.Height = p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
-	p.contentViewPort.SetContent(content)
-	contentBorder := lipgloss.RoundedBorder()
-	if p.isViewportFocus {
-		contentBorder = lipgloss.DoubleBorder()
-	}
-	cotentStyle := lipgloss.NewStyle().MarginTop(1).Padding(0, 1).Border(contentBorder).BorderForeground(styles.Flamingo)
+		headerParts = append(headerParts, keyStyle.Render("Content"))
+		// Recreate header content with the updated headerParts
+		headerContent = lipgloss.NewStyle().Padding(0, 1).Render(lipgloss.JoinVertical(lipgloss.Left, headerParts...))
 
-	return lipgloss.JoinVertical(
-		lipgloss.Top,
-		headerContent,
-		cotentStyle.Render(p.contentViewPort.View()),
-		form,
-	)
+		// Format the diff with colors
+		formattedDiff := formatDiff(pr.Content)
+
+		// Set up viewport for the content
+		p.contentViewPort.Width = p.width - 2 - 2
+
+		// Calculate content height dynamically based on window size
+		maxContentHeight := p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
+		p.contentViewPort.Height = maxContentHeight
+		p.contentViewPort.SetContent(formattedDiff)
+
+		// Style the viewport
+		var contentBorder lipgloss.Border
+		var borderColor lipgloss.TerminalColor
+
+		if p.isViewportFocus {
+			contentBorder = lipgloss.DoubleBorder()
+			borderColor = styles.Blue
+		} else {
+			contentBorder = lipgloss.RoundedBorder()
+			borderColor = styles.Flamingo
+		}
+
+		contentStyle := lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(0, 1).
+			Border(contentBorder).
+			BorderForeground(borderColor)
+
+		if p.isViewportFocus {
+			contentStyle = contentStyle.BorderBackground(styles.Surface0)
+		}
+
+		contentFinal := contentStyle.Render(p.contentViewPort.View())
+
+		return lipgloss.JoinVertical(
+			lipgloss.Top,
+			headerContent,
+			contentFinal,
+			form,
+		)
+
+	case tools.FetchToolName:
+		pr := p.permission.Params.(tools.FetchPermissionsParams)
+		headerParts = append(headerParts, keyStyle.Render("URL: "+pr.URL))
+		content := p.permission.Description
+
+		renderedContent, _ := r.Render(content)
+		p.contentViewPort.Width = p.width - 2 - 2
+		p.contentViewPort.Height = p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
+		p.contentViewPort.SetContent(renderedContent)
+
+		// Style the viewport
+		contentStyle := lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Flamingo)
+
+		contentFinal := contentStyle.Render(p.contentViewPort.View())
+		if renderedContent == "" {
+			contentFinal = ""
+		}
+
+		return lipgloss.JoinVertical(
+			lipgloss.Top,
+			headerContent,
+			contentFinal,
+			form,
+		)
+
+	default:
+		content := p.permission.Description
+
+		renderedContent, _ := r.Render(content)
+		p.contentViewPort.Width = p.width - 2 - 2
+		p.contentViewPort.Height = p.height - lipgloss.Height(headerContent) - lipgloss.Height(form) - 2 - 2 - 1
+		p.contentViewPort.SetContent(renderedContent)
+
+		// Style the viewport
+		contentStyle := lipgloss.NewStyle().
+			MarginTop(1).
+			Padding(0, 1).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(styles.Flamingo)
+
+		contentFinal := contentStyle.Render(p.contentViewPort.View())
+		if renderedContent == "" {
+			contentFinal = ""
+		}
+
+		return lipgloss.JoinVertical(
+			lipgloss.Top,
+			headerContent,
+			contentFinal,
+			form,
+		)
+	}
 }
 
 func (p *permissionDialogCmp) View() string {
@@ -234,12 +453,14 @@ func NewPermissionDialogCmd(permission permission.PermissionRequest) tea.Cmd {
 	minWidth := 100
 	minHeight := 30
 
+	// Make the dialog size more appropriate for different tools
 	switch permission.ToolName {
 	case tools.BashToolName:
-		widthRatio = 0.5
-		heightRatio = 0.3
-		minWidth = 80
-		minHeight = 20
+		// For bash commands, use a more compact dialog
+		widthRatio = 0.7
+		heightRatio = 0.4 // Reduced from 0.5
+		minWidth = 100
+		minHeight = 20 // Reduced from 30
 	}
 	// Return the dialog command
 	return util.CmdHandler(core.DialogMsg{

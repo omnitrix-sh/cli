@@ -10,11 +10,14 @@ import (
 	"time"
 
 	"github.com/omnitrix-sh/cli/internals/config"
+	"github.com/omnitrix-sh/cli/internals/lsp"
 	permission "github.com/omnitrix-sh/cli/internals/permissions"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-type editTool struct{}
+type editTool struct {
+	lspClients map[string]*lsp.Client
+}
 
 const (
 	EditToolName = "edit"
@@ -76,7 +79,7 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		if err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("error creating file: %s", err)), nil
 		}
-		return NewTextErrorResponse(result), nil
+		return NewTextResponse(result), nil
 	}
 
 	if params.NewString == "" {
@@ -84,13 +87,18 @@ func (e *editTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		if err != nil {
 			return NewTextErrorResponse(fmt.Sprintf("error deleting content: %s", err)), nil
 		}
-		return NewTextErrorResponse(result), nil
+		return NewTextResponse(result), nil
 	}
 
 	result, err := replaceContent(params.FilePath, params.OldString, params.NewString)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("error replacing content: %s", err)), nil
 	}
+
+	// Wait for LSP diagnostics after editing the file
+	waitForLspDiagnostics(ctx, params.FilePath, e.lspClients)
+	result = fmt.Sprintf("<result>\n%s\n</result>\n", result)
+	result += appendDiagnostics(params.FilePath, e.lspClients)
 	return NewTextResponse(result), nil
 }
 
@@ -253,7 +261,12 @@ func replaceContent(filePath, oldString, newString string) (string, error) {
 	}
 
 	newContent := oldContent[:index] + newString + oldContent[index+len(oldString):]
-	diff := GenerateDiff(oldString, newContent)
+
+	startIndex := max(0, index-3)
+	oldEndIndex := min(len(oldContent), index+len(oldString)+3)
+	newEndIndex := min(len(newContent), index+len(newString)+3)
+
+	diff := GenerateDiff(oldContent[startIndex:oldEndIndex], newContent[startIndex:newEndIndex])
 
 	p := permission.Default.Request(
 		permission.CreatePermissionRequest{
@@ -291,23 +304,46 @@ func GenerateDiff(oldContent, newContent string) string {
 	diffs = dmp.DiffCharsToLines(diffs, dmpStrings)
 	diffs = dmp.DiffCleanupSemantic(diffs)
 	buff := strings.Builder{}
+
+	// Add a header to make the diff more readable
+	buff.WriteString("Changes:\n")
+
 	for _, diff := range diffs {
 		text := diff.Text
 
 		switch diff.Type {
 		case diffmatchpatch.DiffInsert:
-			for _, line := range strings.Split(text, "\n") {
+			for line := range strings.SplitSeq(text, "\n") {
+				if line == "" {
+					continue
+				}
 				_, _ = buff.WriteString("+ " + line + "\n")
 			}
 		case diffmatchpatch.DiffDelete:
-			for _, line := range strings.Split(text, "\n") {
+			for line := range strings.SplitSeq(text, "\n") {
+				if line == "" {
+					continue
+				}
 				_, _ = buff.WriteString("- " + line + "\n")
 			}
 		case diffmatchpatch.DiffEqual:
-			if len(text) > 40 {
-				_, _ = buff.WriteString("  " + text[:20] + "..." + text[len(text)-20:] + "\n")
+			// Only show a small context for unchanged text
+			lines := strings.Split(text, "\n")
+			if len(lines) > 3 {
+				// Show only first and last line of context with a separator
+				if lines[0] != "" {
+					_, _ = buff.WriteString("  " + lines[0] + "\n")
+				}
+				_, _ = buff.WriteString("  ...\n")
+				if lines[len(lines)-1] != "" {
+					_, _ = buff.WriteString("  " + lines[len(lines)-1] + "\n")
+				}
 			} else {
-				for _, line := range strings.Split(text, "\n") {
+				// Show all lines for small contexts
+				for _, line := range lines {
+					if line == "" {
+						continue
+					}
 					_, _ = buff.WriteString("  " + line + "\n")
 				}
 			}
@@ -366,6 +402,8 @@ When making edits:
 Remember: when making multiple file edits in a row to the same file, you should prefer to send all edits in a single message with multiple calls to this tool, rather than multiple messages with a single call each.`
 }
 
-func NewEditTool() BaseTool {
-	return &editTool{}
+func NewEditTool(lspClients map[string]*lsp.Client) BaseTool {
+	return &editTool{
+		lspClients,
+	}
 }

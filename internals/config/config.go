@@ -49,11 +49,20 @@ type Log struct {
 	Level string `json:"level"`
 }
 
+type LSPConfig struct {
+	Disabled bool     `json:"enabled"`
+	Command  string   `json:"command"`
+	Args     []string `json:"args"`
+	Options  any      `json:"options"`
+}
+
 type Config struct {
 	Data       *Data                             `json:"data,omitempty"`
 	Log        *Log                              `json:"log,omitempty"`
 	MCPServers map[string]MCPServer              `json:"mcpServers,omitempty"`
 	Providers  map[models.ModelProvider]Provider `json:"providers,omitempty"`
+
+	LSP map[string]LSPConfig `json:"lsp,omitempty"`
 
 	Model *Model `json:"model,omitempty"`
 }
@@ -61,10 +70,10 @@ type Config struct {
 var cfg *Config
 
 const (
-	defaultDataDirectory = ".termai"
+	defaultDataDirectory = ".omnitrix"
 	defaultLogLevel      = "info"
 	defaultMaxTokens     = int64(5000)
-	termai               = "termai"
+	omnitrix             = "omnitrix"
 )
 
 func Load(debug bool) error {
@@ -72,11 +81,11 @@ func Load(debug bool) error {
 		return nil
 	}
 
-	viper.SetConfigName(fmt.Sprintf(".%s", termai))
+	viper.SetConfigName(fmt.Sprintf(".%s", omnitrix))
 	viper.SetConfigType("json")
 	viper.AddConfigPath("$HOME")
-	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", termai))
-	viper.SetEnvPrefix(strings.ToUpper(termai))
+	viper.AddConfigPath(fmt.Sprintf("$XDG_CONFIG_HOME/%s", omnitrix))
+	viper.SetEnvPrefix(strings.ToUpper(omnitrix))
 
 	// Add defaults
 	viper.SetDefault("data.directory", defaultDataDirectory)
@@ -131,7 +140,7 @@ func Load(debug bool) error {
 		}
 	}
 	local := viper.New()
-	local.SetConfigName(fmt.Sprintf(".%s", termai))
+	local.SetConfigName(fmt.Sprintf(".%s", omnitrix))
 	local.SetConfigType("json")
 	local.AddConfigPath(".")
 	// load local config, this will override the global config
