@@ -11,6 +11,10 @@ Omnitrix.md
 /data
 data/
 
+# Documentation and test files
+PR_PATCH_TOOL.md
+*.db
+
 # Test binary, built with `go test -c`
 *.test
 
