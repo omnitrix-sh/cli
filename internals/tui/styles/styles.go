@@ -1,128 +1,166 @@
 package styles
 
 import (
-	catppuccin "github.com/catppuccin/go"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/omnitrix-sh/cli/internals/tui/theme"
 )
 
 var (
-	light = catppuccin.Latte
-	dark  = catppuccin.Mocha
+	ImageBakcground = "#212121"
+
+	// Color constants for huh theme
+	Text           = "#CDD6F4"
+	SubText0       = "#A6ADC8"
+	Red            = "#F38BA8"
+	Green          = "#A6E3A1"
+	Blue           = "#89B4FA"
+	Teal           = "#94E2D5"
+	Overlay0       = "#6C7086"
+	Ovelay1        = "#7F849C"
+	Base           = "#1E1E2E"
 )
 
-var (
-	Regular = lipgloss.NewStyle()
-	Bold    = Regular.Bold(true)
-	Padded  = Regular.Padding(0, 1)
+// Style generation functions that use the current theme
 
-	Border       = Regular.Border(lipgloss.NormalBorder())
-	ThickBorder  = Regular.Border(lipgloss.ThickBorder())
-	DoubleBorder = Regular.Border(lipgloss.DoubleBorder())
+// BaseStyle returns the base style with background and foreground colors
+func BaseStyle() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return lipgloss.NewStyle().
+		Background(t.Background()).
+		Foreground(t.Text())
+}
 
-	// Colors
-	White    = lipgloss.Color("#ffffff")
-	Surface0 = lipgloss.AdaptiveColor{
-		Dark:  dark.Surface0().Hex,
-		Light: light.Surface0().Hex,
-	}
+// Regular returns a basic unstyled lipgloss.Style
+func Regular() lipgloss.Style {
+	return lipgloss.NewStyle()
+}
 
-	Overlay0 = lipgloss.AdaptiveColor{
-		Dark:  dark.Overlay0().Hex,
-		Light: light.Overlay0().Hex,
-	}
+// Bold returns a bold style
+func Bold() lipgloss.Style {
+	return Regular().Bold(true)
+}
 
-	Ovelay1 = lipgloss.AdaptiveColor{
-		Dark:  dark.Overlay1().Hex,
-		Light: light.Overlay1().Hex,
-	}
+// Padded returns a style with horizontal padding
+func Padded() lipgloss.Style {
+	return Regular().Padding(0, 1)
+}
 
-	Text = lipgloss.AdaptiveColor{
-		Dark:  dark.Text().Hex,
-		Light: light.Text().Hex,
-	}
+// Border returns a style with a normal border
+func Border() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return Regular().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(t.BorderNormal())
+}
 
-	SubText0 = lipgloss.AdaptiveColor{
-		Dark:  dark.Subtext0().Hex,
-		Light: light.Subtext0().Hex,
-	}
+// ThickBorder returns a style with a thick border
+func ThickBorder() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return Regular().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(t.BorderNormal())
+}
 
-	SubText1 = lipgloss.AdaptiveColor{
-		Dark:  dark.Subtext1().Hex,
-		Light: light.Subtext1().Hex,
-	}
+// DoubleBorder returns a style with a double border
+func DoubleBorder() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return Regular().
+		Border(lipgloss.DoubleBorder()).
+		BorderForeground(t.BorderNormal())
+}
 
-	LightGrey = lipgloss.AdaptiveColor{
-		Dark:  dark.Surface0().Hex,
-		Light: light.Surface0().Hex,
-	}
-	Grey = lipgloss.AdaptiveColor{
-		Dark:  dark.Surface1().Hex,
-		Light: light.Surface1().Hex,
-	}
+// FocusedBorder returns a style with a border using the focused border color
+func FocusedBorder() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return Regular().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(t.BorderFocused())
+}
 
-	DarkGrey = lipgloss.AdaptiveColor{
-		Dark:  dark.Surface2().Hex,
-		Light: light.Surface2().Hex,
-	}
+// DimBorder returns a style with a border using the dim border color
+func DimBorder() lipgloss.Style {
+	t := theme.CurrentTheme()
+	return Regular().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(t.BorderDim())
+}
 
-	Base = lipgloss.AdaptiveColor{
-		Dark:  dark.Base().Hex,
-		Light: light.Base().Hex,
-	}
+// PrimaryColor returns the primary color from the current theme
+func PrimaryColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Primary()
+}
 
-	Crust = lipgloss.AdaptiveColor{
-		Dark:  dark.Crust().Hex,
-		Light: light.Crust().Hex,
-	}
+// SecondaryColor returns the secondary color from the current theme
+func SecondaryColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Secondary()
+}
 
-	Blue = lipgloss.AdaptiveColor{
-		Dark:  dark.Blue().Hex,
-		Light: light.Blue().Hex,
-	}
+// AccentColor returns the accent color from the current theme
+func AccentColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Accent()
+}
 
-	Red = lipgloss.AdaptiveColor{
-		Dark:  dark.Red().Hex,
-		Light: light.Red().Hex,
-	}
+// ErrorColor returns the error color from the current theme
+func ErrorColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Error()
+}
 
-	Green = lipgloss.AdaptiveColor{
-		Dark:  dark.Green().Hex,
-		Light: light.Green().Hex,
-	}
+// WarningColor returns the warning color from the current theme
+func WarningColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Warning()
+}
 
-	Mauve = lipgloss.AdaptiveColor{
-		Dark:  dark.Mauve().Hex,
-		Light: light.Mauve().Hex,
-	}
+// SuccessColor returns the success color from the current theme
+func SuccessColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Success()
+}
 
-	Teal = lipgloss.AdaptiveColor{
-		Dark:  dark.Teal().Hex,
-		Light: light.Teal().Hex,
-	}
+// InfoColor returns the info color from the current theme
+func InfoColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Info()
+}
 
-	Rosewater = lipgloss.AdaptiveColor{
-		Dark:  dark.Rosewater().Hex,
-		Light: light.Rosewater().Hex,
-	}
+// TextColor returns the text color from the current theme
+func TextColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Text()
+}
 
-	Flamingo = lipgloss.AdaptiveColor{
-		Dark:  dark.Flamingo().Hex,
-		Light: light.Flamingo().Hex,
-	}
+// TextMutedColor returns the muted text color from the current theme
+func TextMutedColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().TextMuted()
+}
 
-	Lavender = lipgloss.AdaptiveColor{
-		Dark:  dark.Lavender().Hex,
-		Light: light.Lavender().Hex,
-	}
+// TextEmphasizedColor returns the emphasized text color from the current theme
+func TextEmphasizedColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().TextEmphasized()
+}
 
-	Peach = lipgloss.AdaptiveColor{
-		Dark:  dark.Peach().Hex,
-		Light: light.Peach().Hex,
-	}
+// BackgroundColor returns the background color from the current theme
+func BackgroundColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().Background()
+}
 
-	Primary   = Blue
-	Secondary = Mauve
+// BackgroundSecondaryColor returns the secondary background color from the current theme
+func BackgroundSecondaryColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().BackgroundSecondary()
+}
 
-	Warning = Peach
-	Error   = Red
-)
+// BackgroundDarkerColor returns the darker background color from the current theme
+func BackgroundDarkerColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().BackgroundDarker()
+}
+
+// BorderNormalColor returns the normal border color from the current theme
+func BorderNormalColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().BorderNormal()
+}
+
+// BorderFocusedColor returns the focused border color from the current theme
+func BorderFocusedColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().BorderFocused()
+}
+
+// BorderDimColor returns the dim border color from the current theme
+func BorderDimColor() lipgloss.AdaptiveColor {
+	return theme.CurrentTheme().BorderDim()
+}

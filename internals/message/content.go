@@ -2,6 +2,10 @@ package message
 
 import (
 	"encoding/base64"
+	"slices"
+	"time"
+
+	"github.com/omnitrix-sh/cli/internals/llm/models"
 )
 
 type MessageRole string
@@ -11,6 +15,20 @@ const (
 	User      MessageRole = "user"
 	System    MessageRole = "system"
 	Tool      MessageRole = "tool"
+)
+
+type FinishReason string
+
+const (
+	FinishReasonEndTurn          FinishReason = "end_turn"
+	FinishReasonMaxTokens        FinishReason = "max_tokens"
+	FinishReasonToolUse          FinishReason = "tool_use"
+	FinishReasonCanceled         FinishReason = "canceled"
+	FinishReasonError            FinishReason = "error"
+	FinishReasonPermissionDenied FinishReason = "permission_denied"
+
+	// Should never happen
+	FinishReasonUnknown FinishReason = "unknown"
 )
 
 type ContentPart interface {
@@ -48,13 +66,17 @@ func (iuc ImageURLContent) String() string {
 func (ImageURLContent) isPart() {}
 
 type BinaryContent struct {
+	Path     string
 	MIMEType string
 	Data     []byte
 }
 
-func (bc BinaryContent) String() string {
+func (bc BinaryContent) String(provider models.ModelProvider) string {
 	base64Encoded := base64.StdEncoding.EncodeToString(bc.Data)
-	return "data:" + bc.MIMEType + ";base64," + base64Encoded
+	if provider == models.ProviderOpenAI {
+		return "data:" + bc.MIMEType + ";base64," + base64Encoded
+	}
+	return base64Encoded
 }
 
 func (BinaryContent) isPart() {}
@@ -73,13 +95,15 @@ type ToolResult struct {
 	ToolCallID string `json:"tool_call_id"`
 	Name       string `json:"name"`
 	Content    string `json:"content"`
+	Metadata   string `json:"metadata"`
 	IsError    bool   `json:"is_error"`
 }
 
 func (ToolResult) isPart() {}
 
 type Finish struct {
-	Reason string `json:"reason"`
+	Reason FinishReason `json:"reason"`
+	Time   int64        `json:"time"`
 }
 
 func (Finish) isPart() {}
@@ -89,7 +113,7 @@ type Message struct {
 	Role      MessageRole
 	SessionID string
 	Parts     []ContentPart
-
+	Model     models.ModelID
 	CreatedAt int64
 	UpdatedAt int64
 }
@@ -161,7 +185,16 @@ func (m *Message) IsFinished() bool {
 	return false
 }
 
-func (m *Message) FinishReason() string {
+func (m *Message) FinishPart() *Finish {
+	for _, part := range m.Parts {
+		if c, ok := part.(Finish); ok {
+			return &c
+		}
+	}
+	return nil
+}
+
+func (m *Message) FinishReason() FinishReason {
 	for _, part := range m.Parts {
 		if c, ok := part.(Finish); ok {
 			return c.Reason
@@ -203,6 +236,40 @@ func (m *Message) AppendReasoningContent(delta string) {
 	}
 }
 
+func (m *Message) FinishToolCall(toolCallID string) {
+	for i, part := range m.Parts {
+		if c, ok := part.(ToolCall); ok {
+			if c.ID == toolCallID {
+				m.Parts[i] = ToolCall{
+					ID:       c.ID,
+					Name:     c.Name,
+					Input:    c.Input,
+					Type:     c.Type,
+					Finished: true,
+				}
+				return
+			}
+		}
+	}
+}
+
+func (m *Message) AppendToolCallInput(toolCallID string, inputDelta string) {
+	for i, part := range m.Parts {
+		if c, ok := part.(ToolCall); ok {
+			if c.ID == toolCallID {
+				m.Parts[i] = ToolCall{
+					ID:       c.ID,
+					Name:     c.Name,
+					Input:    c.Input + inputDelta,
+					Type:     c.Type,
+					Finished: c.Finished,
+				}
+				return
+			}
+		}
+	}
+}
+
 func (m *Message) AddToolCall(tc ToolCall) {
 	for i, part := range m.Parts {
 		if c, ok := part.(ToolCall); ok {
@@ -216,6 +283,15 @@ func (m *Message) AddToolCall(tc ToolCall) {
 }
 
 func (m *Message) SetToolCalls(tc []ToolCall) {
+	// remove any existing tool call part it could have multiple
+	parts := make([]ContentPart, 0)
+	for _, part := range m.Parts {
+		if _, ok := part.(ToolCall); ok {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	m.Parts = parts
 	for _, toolCall := range tc {
 		m.Parts = append(m.Parts, toolCall)
 	}
@@ -231,8 +307,15 @@ func (m *Message) SetToolResults(tr []ToolResult) {
 	}
 }
 
-func (m *Message) AddFinish(reason string) {
-	m.Parts = append(m.Parts, Finish{Reason: reason})
+func (m *Message) AddFinish(reason FinishReason) {
+	// remove any existing finish part
+	for i, part := range m.Parts {
+		if _, ok := part.(Finish); ok {
+			m.Parts = slices.Delete(m.Parts, i, i+1)
+			break
+		}
+	}
+	m.Parts = append(m.Parts, Finish{Reason: reason, Time: time.Now().Unix()})
 }
 
 func (m *Message) AddImageURL(url, detail string) {

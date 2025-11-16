@@ -1,19 +1,14 @@
 package styles
 
 const (
-	SessionsIcon string = "󰧑"
-	ChatIcon     string = "󰭹"
+	OpenCodeIcon string = "⌬"
 
-	BotIcon  string = "󰚩"
-	ToolIcon string = ""
-	UserIcon string = ""
-
-	CheckIcon   string = "✓"
-	ErrorIcon   string = ""
-	WarningIcon string = ""
-	InfoIcon    string = ""
-	HintIcon    string = ""
-	SpinnerIcon string = "..."
-	BugIcon     string = ""
-	SleepIcon   string = "󰒲"
+	CheckIcon    string = "✓"
+	ErrorIcon    string = "✖"
+	WarningIcon  string = "⚠"
+	InfoIcon     string = ""
+	HintIcon     string = "i"
+	SpinnerIcon  string = "..."
+	LoadingIcon  string = "⟳"
+	DocumentIcon string = "🖼"
 )

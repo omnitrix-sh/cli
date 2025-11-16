@@ -1,16 +1,16 @@
 package layout
 
 import (
-	"bytes"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	util "github.com/omnitrix-sh/cli/internals/utils"
-
-	"github.com/mattn/go-runewidth"
+	chAnsi "github.com/charmbracelet/x/ansi"
 	"github.com/muesli/ansi"
 	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
+	"github.com/omnitrix-sh/cli/internals/tui/styles"
+	"github.com/omnitrix-sh/cli/internals/tui/theme"
+	"github.com/omnitrix-sh/cli/internals/tui/util"
 )
 
 // Most of this code is borrowed from
@@ -44,15 +44,20 @@ func PlaceOverlay(
 	fgHeight := len(fgLines)
 
 	if shadow {
+		t := theme.CurrentTheme()
+		baseStyle := styles.BaseStyle()
+
 		var shadowbg string = ""
 		shadowchar := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#333333")).
+			Background(t.BackgroundDarker()).
+			Foreground(t.Background()).
 			Render("░")
+		bgchar := baseStyle.Render(" ")
 		for i := 0; i <= fgHeight; i++ {
 			if i == 0 {
-				shadowbg += " " + strings.Repeat(" ", fgWidth) + "\n"
+				shadowbg += bgchar + strings.Repeat(bgchar, fgWidth) + "\n"
 			} else {
-				shadowbg += " " + strings.Repeat(shadowchar, fgWidth) + "\n"
+				shadowbg += bgchar + strings.Repeat(shadowchar, fgWidth) + "\n"
 			}
 		}
 
@@ -115,42 +120,7 @@ func PlaceOverlay(
 // cutLeft cuts printable characters from the left.
 // This function is heavily based on muesli's ansi and truncate packages.
 func cutLeft(s string, cutWidth int) string {
-	var (
-		pos    int
-		isAnsi bool
-		ab     bytes.Buffer
-		b      bytes.Buffer
-	)
-	for _, c := range s {
-		var w int
-		if c == ansi.Marker || isAnsi {
-			isAnsi = true
-			ab.WriteRune(c)
-			if ansi.IsTerminator(c) {
-				isAnsi = false
-				if bytes.HasSuffix(ab.Bytes(), []byte("[0m")) {
-					ab.Reset()
-				}
-			}
-		} else {
-			w = runewidth.RuneWidth(c)
-		}
-
-		if pos >= cutWidth {
-			if b.Len() == 0 {
-				if ab.Len() > 0 {
-					b.Write(ab.Bytes())
-				}
-				if pos-cutWidth > 1 {
-					b.WriteByte(' ')
-					continue
-				}
-			}
-			b.WriteRune(c)
-		}
-		pos += w
-	}
-	return b.String()
+	return chAnsi.Cut(s, cutWidth, lipgloss.Width(s))
 }
 
 func max(a, b int) int {

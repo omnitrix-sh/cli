@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/omnitrix-sh/cli/internals/config"
 )
 
 type PersistentShell struct {
@@ -47,7 +49,9 @@ func GetPersistentShell(workingDir string) *PersistentShell {
 		shellInstance = newPersistentShell(workingDir)
 	})
 
-	if !shellInstance.isAlive {
+	if shellInstance == nil {
+		shellInstance = newPersistentShell(workingDir)
+	} else if !shellInstance.isAlive {
 		shellInstance = newPersistentShell(shellInstance.cwd)
 	}
 
@@ -55,12 +59,31 @@ func GetPersistentShell(workingDir string) *PersistentShell {
 }
 
 func newPersistentShell(cwd string) *PersistentShell {
-	shellPath := os.Getenv("SHELL")
+	// Get shell configuration from config
+	cfg := config.Get()
+	
+	// Default to environment variable if config is not set or nil
+	var shellPath string
+	var shellArgs []string
+	
+	if cfg != nil {
+		shellPath = cfg.Shell.Path
+		shellArgs = cfg.Shell.Args
+	}
+	
 	if shellPath == "" {
-		shellPath = "/bin/bash"
+		shellPath = os.Getenv("SHELL")
+		if shellPath == "" {
+			shellPath = "/bin/bash"
+		}
+	}
+	
+	// Default shell args
+	if len(shellArgs) == 0 {
+		shellArgs = []string{"-l"}
 	}
 
-	cmd := exec.Command(shellPath, "-l")
+	cmd := exec.Command(shellPath, shellArgs...)
 	cmd.Dir = cwd
 
 	stdinPipe, err := cmd.StdinPipe()
@@ -83,11 +106,21 @@ func newPersistentShell(cwd string) *PersistentShell {
 		commandQueue: make(chan *commandExecution, 10),
 	}
 
-	go shell.processCommands()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "Panic in shell command processor: %v\n", r)
+				shell.isAlive = false
+				close(shell.commandQueue)
+			}
+		}()
+		shell.processCommands()
+	}()
 
 	go func() {
 		err := cmd.Wait()
 		if err != nil {
+			// Log the error if needed
 		}
 		shell.isAlive = false
 		close(shell.commandQueue)
@@ -116,10 +149,10 @@ func (s *PersistentShell) execCommand(command string, timeout time.Duration, ctx
 	}
 
 	tempDir := os.TempDir()
-	stdoutFile := filepath.Join(tempDir, fmt.Sprintf("omnitrix-stdout-%d", time.Now().UnixNano()))
-	stderrFile := filepath.Join(tempDir, fmt.Sprintf("omnitrix-stderr-%d", time.Now().UnixNano()))
-	statusFile := filepath.Join(tempDir, fmt.Sprintf("omnitrix-status-%d", time.Now().UnixNano()))
-	cwdFile := filepath.Join(tempDir, fmt.Sprintf("omnitrix-cwd-%d", time.Now().UnixNano()))
+	stdoutFile := filepath.Join(tempDir, fmt.Sprintf("opencode-stdout-%d", time.Now().UnixNano()))
+	stderrFile := filepath.Join(tempDir, fmt.Sprintf("opencode-stderr-%d", time.Now().UnixNano()))
+	statusFile := filepath.Join(tempDir, fmt.Sprintf("opencode-status-%d", time.Now().UnixNano()))
+	cwdFile := filepath.Join(tempDir, fmt.Sprintf("opencode-cwd-%d", time.Now().UnixNano()))
 
 	defer func() {
 		os.Remove(stdoutFile)

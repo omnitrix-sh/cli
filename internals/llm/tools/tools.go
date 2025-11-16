@@ -41,14 +41,6 @@ func NewTextResponse(content string) ToolResponse {
 	}
 }
 
-func NewTextErrorResponse(content string) ToolResponse {
-	return ToolResponse{
-		Type:    ToolResponseTypeText,
-		Content: content,
-		IsError: true,
-	}
-}
-
 func WithResponseMetadata(response ToolResponse, metadata any) ToolResponse {
 	if metadata != nil {
 		metadataBytes, err := json.Marshal(metadata)
@@ -58,6 +50,25 @@ func WithResponseMetadata(response ToolResponse, metadata any) ToolResponse {
 		response.Metadata = string(metadataBytes)
 	}
 	return response
+}
+
+func NewTextErrorResponse(content string) ToolResponse {
+	return ToolResponse{
+		Type:    ToolResponseTypeText,
+		Content: content,
+		IsError: true,
+	}
+}
+
+type ToolCall struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Input string `json:"input"`
+}
+
+type BaseTool interface {
+	Info() ToolInfo
+	Run(ctx context.Context, params ToolCall) (ToolResponse, error)
 }
 
 func GetContextValues(ctx context.Context) (string, string) {
@@ -70,15 +81,4 @@ func GetContextValues(ctx context.Context) (string, string) {
 		return sessionID.(string), ""
 	}
 	return sessionID.(string), messageID.(string)
-}
-
-type ToolCall struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Input string `json:"input"`
-}
-
-type BaseTool interface {
-	Info() ToolInfo
-	Run(ctx context.Context, params ToolCall) (ToolResponse, error)
 }

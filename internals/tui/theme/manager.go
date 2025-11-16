@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/omnitrix-sh/cli/internals/config"
+	"github.com/omnitrix-sh/cli/internals/logging"
 )
 
 // Manager handles theme registration, selection, and retrieval.
@@ -50,8 +52,11 @@ func SetTheme(name string) error {
 
 	globalManager.currentName = name
 
-	// Update the config file (best effort, don't fail)
-	_ = updateConfigTheme(name)
+	// Update the config file using viper
+	if err := updateConfigTheme(name); err != nil {
+		// Log the error but don't fail the theme change
+		logging.Warn("Warning: Failed to update config file with new theme", "err", err)
+	}
 
 	return nil
 }
@@ -108,6 +113,6 @@ func GetTheme(name string) Theme {
 
 // updateConfigTheme updates the theme setting in the configuration file
 func updateConfigTheme(themeName string) error {
-	// TODO: implement config theme updating if needed
-	return nil
+	// Use the config package to update the theme
+	return config.UpdateTheme(themeName)
 }

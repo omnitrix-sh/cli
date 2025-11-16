@@ -11,7 +11,7 @@ type Interface interface {
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
-	Subscribe(ctx context.Context) <-chan pubsub.Event[Message]
+	Subscribe(ctx context.Context) <-chan pubsub.Event[LogMessage]
 
-	List() []Message
+	List() []LogMessage
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/omnitrix-sh/cli/internals/logging"
 )
 
 var (
@@ -22,10 +23,12 @@ func init() {
 	var err error
 	rgPath, err = exec.LookPath("rg")
 	if err != nil {
+		logging.Warn("Ripgrep (rg) not found in $PATH. Some features might be limited or slower.")
 		rgPath = ""
 	}
 	fzfPath, err = exec.LookPath("fzf")
 	if err != nil {
+		logging.Warn("FZF not found in $PATH. Some features might be limited or slower.")
 		fzfPath = ""
 	}
 }
@@ -71,6 +74,7 @@ type FileInfo struct {
 }
 
 func SkipHidden(path string) bool {
+	// Check for hidden files (starting with a dot)
 	base := filepath.Base(path)
 	if base != "." && strings.HasPrefix(base, ".") {
 		return true
@@ -128,7 +132,7 @@ func GlobWithDoublestar(pattern, searchPath string, limit int) ([]string, bool, 
 		if !strings.HasPrefix(absPath, searchPath) && searchPath != "." {
 			absPath = filepath.Join(searchPath, absPath)
 		} else if !strings.HasPrefix(absPath, "/") && searchPath == "." {
-			absPath = filepath.Join(searchPath, absPath)
+			absPath = filepath.Join(searchPath, absPath) // Ensure relative paths are joined correctly
 		}
 
 		matches = append(matches, FileInfo{Path: absPath, ModTime: info.ModTime()})

@@ -12,8 +12,25 @@ import (
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/omnitrix-sh/cli/internals/config"
-	permission "github.com/omnitrix-sh/cli/internals/permissions"
+	"github.com/omnitrix-sh/cli/internals/permission"
 )
+
+type FetchParams struct {
+	URL     string `json:"url"`
+	Format  string `json:"format"`
+	Timeout int    `json:"timeout,omitempty"`
+}
+
+type FetchPermissionsParams struct {
+	URL     string `json:"url"`
+	Format  string `json:"format"`
+	Timeout int    `json:"timeout,omitempty"`
+}
+
+type fetchTool struct {
+	client      *http.Client
+	permissions permission.Service
+}
 
 const (
 	FetchToolName        = "fetch"
@@ -48,27 +65,12 @@ TIPS:
 - Set appropriate timeouts for potentially slow websites`
 )
 
-type FetchParams struct {
-	URL     string `json:"url"`
-	Format  string `json:"format"`
-	Timeout int    `json:"timeout,omitempty"`
-}
-
-type FetchPermissionsParams struct {
-	URL     string `json:"url"`
-	Format  string `json:"format"`
-	Timeout int    `json:"timeout,omitempty"`
-}
-
-type fetchTool struct {
-	client *http.Client
-}
-
-func NewFetchTool() BaseTool {
+func NewFetchTool(permissions permission.Service) BaseTool {
 	return &fetchTool{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		permissions: permissions,
 	}
 }
 
@@ -84,6 +86,7 @@ func (t *fetchTool) Info() ToolInfo {
 			"format": map[string]any{
 				"type":        "string",
 				"description": "The format to return the content in (text, markdown, or html)",
+				"enum":        []string{"text", "markdown", "html"},
 			},
 			"timeout": map[string]any{
 				"type":        "number",
@@ -113,22 +116,24 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse("URL must start with http:// or https://"), nil
 	}
 
-	p := permission.Default.Request(
+	sessionID, messageID := GetContextValues(ctx)
+	if sessionID == "" || messageID == "" {
+		return ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a new file")
+	}
+
+	p := t.permissions.Request(
 		permission.CreatePermissionRequest{
+			SessionID:   sessionID,
 			Path:        config.WorkingDirectory(),
 			ToolName:    FetchToolName,
 			Action:      "fetch",
 			Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
-			Params: FetchPermissionsParams{
-				URL:     params.URL,
-				Format:  params.Format,
-				Timeout: params.Timeout,
-			},
+			Params:      FetchPermissionsParams(params),
 		},
 	)
 
 	if !p {
-		return NewTextErrorResponse("Permission denied to fetch from URL: " + params.URL), nil
+		return ToolResponse{}, permission.ErrorPermissionDenied
 	}
 
 	client := t.client
@@ -144,14 +149,14 @@ func (t *fetchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 
 	req, err := http.NewRequestWithContext(ctx, "GET", params.URL, nil)
 	if err != nil {
-		return NewTextErrorResponse("Failed to create request: " + err.Error()), nil
+		return ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "omnitrix/1.0")
+	req.Header.Set("User-Agent", "opencode/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return NewTextErrorResponse("Failed to execute request: " + err.Error()), nil
+		return ToolResponse{}, fmt.Errorf("failed to fetch URL: %w", err)
 	}
 	defer resp.Body.Close()
 

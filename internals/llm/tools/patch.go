@@ -11,7 +11,9 @@ import (
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/diff"
 	"github.com/omnitrix-sh/cli/internals/history"
+	"github.com/omnitrix-sh/cli/internals/logging"
 	"github.com/omnitrix-sh/cli/internals/lsp"
+	"github.com/omnitrix-sh/cli/internals/permission"
 )
 
 type PatchParams struct {
@@ -25,8 +27,9 @@ type PatchResponseMetadata struct {
 }
 
 type patchTool struct {
-	lspClients map[string]*lsp.Client
-	files      history.Service
+	lspClients  map[string]*lsp.Client
+	permissions permission.Service
+	files       history.Service
 }
 
 const (
@@ -61,10 +64,11 @@ CRITICAL REQUIREMENTS FOR USING THIS TOOL:
 The tool will apply all changes in a single atomic operation.`
 )
 
-func NewPatchTool(lspClients map[string]*lsp.Client, files history.Service) BaseTool {
+func NewPatchTool(lspClients map[string]*lsp.Client, permissions permission.Service, files history.Service) BaseTool {
 	return &patchTool{
-		lspClients: lspClients,
-		files:      files,
+		lspClients:  lspClients,
+		permissions: permissions,
+		files:       files,
 	}
 }
 
@@ -92,6 +96,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse("patch_text is required"), nil
 	}
 
+	// Identify all files needed for the patch and verify they've been read
 	filesToRead := diff.IdentifyFilesNeeded(params.PatchText)
 	for _, filePath := range filesToRead {
 		absPath := filePath
@@ -126,6 +131,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 	}
 
+	// Check for new files to ensure they don't already exist
 	filesToAdd := diff.IdentifyFilesAdded(params.PatchText)
 	for _, filePath := range filesToAdd {
 		absPath := filePath
@@ -142,6 +148,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 	}
 
+	// Load all required files
 	currentFiles := make(map[string]string)
 	for _, filePath := range filesToRead {
 		absPath := filePath
@@ -157,6 +164,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		currentFiles[filePath] = string(content)
 	}
 
+	// Process the patch
 	patch, fuzz, err := diff.TextToPatch(params.PatchText, currentFiles)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("failed to parse patch: %s", err)), nil
@@ -166,16 +174,90 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse(fmt.Sprintf("patch contains fuzzy matches (fuzz level: %d). Please make your context lines more precise", fuzz)), nil
 	}
 
+	// Convert patch to commit
 	commit, err := diff.PatchToCommit(patch, currentFiles)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("failed to create commit from patch: %s", err)), nil
 	}
 
-	sessionID, _ := GetContextValues(ctx)
-	if sessionID == "" {
-		return ToolResponse{}, fmt.Errorf("session ID is required for creating a patch")
+	// Get session ID and message ID
+	sessionID, messageID := GetContextValues(ctx)
+	if sessionID == "" || messageID == "" {
+		return ToolResponse{}, fmt.Errorf("session ID and message ID are required for creating a patch")
 	}
 
+	// Request permission for all changes
+	for path, change := range commit.Changes {
+		switch change.Type {
+		case diff.ActionAdd:
+			dir := filepath.Dir(path)
+			patchDiff, _, _ := diff.GenerateDiff("", *change.NewContent, path)
+			p := p.permissions.Request(
+				permission.CreatePermissionRequest{
+					SessionID:   sessionID,
+					Path:        dir,
+					ToolName:    PatchToolName,
+					Action:      "create",
+					Description: fmt.Sprintf("Create file %s", path),
+					Params: EditPermissionsParams{
+						FilePath: path,
+						Diff:     patchDiff,
+					},
+				},
+			)
+			if !p {
+				return ToolResponse{}, permission.ErrorPermissionDenied
+			}
+		case diff.ActionUpdate:
+			currentContent := ""
+			if change.OldContent != nil {
+				currentContent = *change.OldContent
+			}
+			newContent := ""
+			if change.NewContent != nil {
+				newContent = *change.NewContent
+			}
+			patchDiff, _, _ := diff.GenerateDiff(currentContent, newContent, path)
+			dir := filepath.Dir(path)
+			p := p.permissions.Request(
+				permission.CreatePermissionRequest{
+					SessionID:   sessionID,
+					Path:        dir,
+					ToolName:    PatchToolName,
+					Action:      "update",
+					Description: fmt.Sprintf("Update file %s", path),
+					Params: EditPermissionsParams{
+						FilePath: path,
+						Diff:     patchDiff,
+					},
+				},
+			)
+			if !p {
+				return ToolResponse{}, permission.ErrorPermissionDenied
+			}
+		case diff.ActionDelete:
+			dir := filepath.Dir(path)
+			patchDiff, _, _ := diff.GenerateDiff(*change.OldContent, "", path)
+			p := p.permissions.Request(
+				permission.CreatePermissionRequest{
+					SessionID:   sessionID,
+					Path:        dir,
+					ToolName:    PatchToolName,
+					Action:      "delete",
+					Description: fmt.Sprintf("Delete file %s", path),
+					Params: EditPermissionsParams{
+						FilePath: path,
+						Diff:     patchDiff,
+					},
+				},
+			)
+			if !p {
+				return ToolResponse{}, permission.ErrorPermissionDenied
+			}
+		}
+	}
+
+	// Apply the changes to the filesystem
 	err = diff.ApplyCommit(commit, func(path string, content string) error {
 		absPath := path
 		if !filepath.IsAbs(absPath) {
@@ -183,6 +265,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			absPath = filepath.Join(wd, absPath)
 		}
 
+		// Create parent directories if needed
 		dir := filepath.Dir(absPath)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("failed to create parent directories for %s: %w", absPath, err)
@@ -201,6 +284,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		return NewTextErrorResponse(fmt.Sprintf("failed to apply patch: %s", err)), nil
 	}
 
+	// Update file history for all modified files
 	changedFiles := []string{}
 	totalAdditions := 0
 	totalRemovals := 0
@@ -223,31 +307,45 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 			newContent = *change.NewContent
 		}
 
+		// Calculate diff statistics
 		_, additions, removals := diff.GenerateDiff(oldContent, newContent, path)
 		totalAdditions += additions
 		totalRemovals += removals
 
-		if p.files != nil {
-			file, err := p.files.GetByPathAndSession(ctx, absPath, sessionID)
-			if err != nil && change.Type != diff.ActionAdd {
-				_, _ = p.files.Create(ctx, sessionID, absPath, oldContent)
-			}
-
-			if err == nil && change.Type != diff.ActionAdd && file.Content != oldContent {
-				_, _ = p.files.CreateVersion(ctx, sessionID, absPath, oldContent)
-			}
-
-			if change.Type == diff.ActionDelete {
-				_, _ = p.files.CreateVersion(ctx, sessionID, absPath, "")
-			} else {
-				_, _ = p.files.CreateVersion(ctx, sessionID, absPath, newContent)
+		// Update history
+		file, err := p.files.GetByPathAndSession(ctx, absPath, sessionID)
+		if err != nil && change.Type != diff.ActionAdd {
+			// If not adding a file, create history entry for existing file
+			_, err = p.files.Create(ctx, sessionID, absPath, oldContent)
+			if err != nil {
+				logging.Debug("Error creating file history", "error", err)
 			}
 		}
 
+		if err == nil && change.Type != diff.ActionAdd && file.Content != oldContent {
+			// User manually changed content, store intermediate version
+			_, err = p.files.CreateVersion(ctx, sessionID, absPath, oldContent)
+			if err != nil {
+				logging.Debug("Error creating file history version", "error", err)
+			}
+		}
+
+		// Store new version
+		if change.Type == diff.ActionDelete {
+			_, err = p.files.CreateVersion(ctx, sessionID, absPath, "")
+		} else {
+			_, err = p.files.CreateVersion(ctx, sessionID, absPath, newContent)
+		}
+		if err != nil {
+			logging.Debug("Error creating file history version", "error", err)
+		}
+
+		// Record file operations
 		recordFileWrite(absPath)
 		recordFileRead(absPath)
 	}
 
+	// Run LSP diagnostics on all changed files
 	for _, filePath := range changedFiles {
 		waitForLspDiagnostics(ctx, filePath, p.lspClients)
 	}
