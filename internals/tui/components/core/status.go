@@ -12,7 +12,7 @@ import (
 	"github.com/omnitrix-sh/cli/internals/lsp"
 	"github.com/omnitrix-sh/cli/internals/lsp/protocol"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
-	"github.com/omnitrix-sh/cli/internals/session"
+	"github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/components/chat"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	"github.com/omnitrix-sh/cli/internals/tui/theme"

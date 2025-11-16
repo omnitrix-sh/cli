@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/diff"
-	"github.com/omnitrix-sh/cli/internals/llm/agent"
+	"github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/llm/models"
 	"github.com/omnitrix-sh/cli/internals/llm/tools"
 	"github.com/omnitrix-sh/cli/internals/message"

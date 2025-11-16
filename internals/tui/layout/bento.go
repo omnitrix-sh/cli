@@ -180,9 +180,9 @@ func (b *bentoLayout) View() string {
 	return ""
 }
 
-func (b *bentoLayout) SetSize(width int, height int) {
+func (b *bentoLayout) SetSize(width int, height int) tea.Cmd {
 	if width < 0 || height < 0 {
-		return
+		return nil
 	}
 	b.width = width
 	b.height = height
@@ -248,15 +248,17 @@ func (b *bentoLayout) SetSize(width int, height int) {
 		}
 	}
 
+	var cmds []tea.Cmd
 	if pane, ok := b.panes[BentoLeftPane]; ok && !b.hiddenPanes[BentoLeftPane] {
-		pane.SetSize(leftWidth, height)
+		cmds = append(cmds, pane.SetSize(leftWidth, height))
 	}
 	if pane, ok := b.panes[BentoRightTopPane]; ok && !b.hiddenPanes[BentoRightTopPane] {
-		pane.SetSize(rightWidth, rightTopHeight)
+		cmds = append(cmds, pane.SetSize(rightWidth, rightTopHeight))
 	}
 	if pane, ok := b.panes[BentoRightBottomPane]; ok && !b.hiddenPanes[BentoRightBottomPane] {
-		pane.SetSize(rightWidth, rightBottomHeight)
+		cmds = append(cmds, pane.SetSize(rightWidth, rightBottomHeight))
 	}
+	return tea.Batch(cmds...)
 }
 
 func (b *bentoLayout) HidePane(pane paneID) tea.Cmd {
@@ -266,8 +268,7 @@ func (b *bentoLayout) HidePane(pane paneID) tea.Cmd {
 	if _, ok := b.panes[pane]; ok {
 		b.hiddenPanes[pane] = true
 	}
-	b.SetSize(b.width, b.height)
-	return b.SwitchPane(false)
+	return tea.Batch(b.SetSize(b.width, b.height), b.SwitchPane(false))
 }
 
 func (b *bentoLayout) SwitchPane(back bool) tea.Cmd {

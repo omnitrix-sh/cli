@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/message"
-	"github.com/omnitrix-sh/cli/internals/session"
+	"github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	"github.com/omnitrix-sh/cli/internals/tui/theme"
 	"github.com/omnitrix-sh/cli/internals/version"

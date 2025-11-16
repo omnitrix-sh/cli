@@ -9,7 +9,7 @@ import (
 
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/llm/tools/shell"
-	"github.com/omnitrix-sh/cli/internals/permission"
+	"github.com/omnitrix-sh/cli/internals/permissions"
 )
 
 type BashParams struct {

@@ -12,7 +12,7 @@ import (
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/omnitrix-sh/cli/internals/config"
-	"github.com/omnitrix-sh/cli/internals/permission"
+	"github.com/omnitrix-sh/cli/internals/permissions"
 )
 
 type FetchParams struct {

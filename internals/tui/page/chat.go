@@ -10,7 +10,7 @@ import (
 	"github.com/omnitrix-sh/cli/internals/app"
 	"github.com/omnitrix-sh/cli/internals/completions"
 	"github.com/omnitrix-sh/cli/internals/message"
-	"github.com/omnitrix-sh/cli/internals/session"
+	"github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/components/chat"
 	"github.com/omnitrix-sh/cli/internals/tui/components/dialog"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"

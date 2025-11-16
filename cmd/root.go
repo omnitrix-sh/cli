@@ -13,7 +13,7 @@ import (
 	"github.com/omnitrix-sh/cli/internals/config"
 	"github.com/omnitrix-sh/cli/internals/db"
 	"github.com/omnitrix-sh/cli/internals/format"
-	"github.com/omnitrix-sh/cli/internals/llm/agent"
+	"github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/logging"
 	"github.com/omnitrix-sh/cli/internals/pubsub"
 	"github.com/omnitrix-sh/cli/internals/tui"
@@ -22,11 +22,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "opencode",
-	Short: "Terminal-based AI assistant for software development",
-	Long: `OpenCode is a powerful terminal-based AI assistant that helps with software development tasks.
-It provides an interactive chat interface with AI capabilities, code analysis, and LSP integration
-to assist developers in writing, debugging, and understanding code directly from the terminal.`,
+	Use:   "omnitrix.sh",
+	Short: "cursor for terminal",
+	Long:  `a claude cli alternative with no vendor lock-in`,
 	Example: `
   # Run in interactive mode
   opencode

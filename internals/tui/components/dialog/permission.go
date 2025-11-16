@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/omnitrix-sh/cli/internals/diff"
 	"github.com/omnitrix-sh/cli/internals/llm/tools"
-	"github.com/omnitrix-sh/cli/internals/permission"
+	"github.com/omnitrix-sh/cli/internals/permissions"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	"github.com/omnitrix-sh/cli/internals/tui/theme"

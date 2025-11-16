@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/omnitrix-sh/cli/internals/session"
+	"github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/layout"
 	"github.com/omnitrix-sh/cli/internals/tui/styles"
 	"github.com/omnitrix-sh/cli/internals/tui/theme"

@@ -14,7 +14,7 @@ import (
 	"github.com/omnitrix-sh/cli/internals/history"
 	"github.com/omnitrix-sh/cli/internals/logging"
 	"github.com/omnitrix-sh/cli/internals/lsp"
-	"github.com/omnitrix-sh/cli/internals/permission"
+	"github.com/omnitrix-sh/cli/internals/permissions"
 )
 
 type EditParams struct {

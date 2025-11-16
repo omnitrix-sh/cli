@@ -18,6 +18,7 @@ var (
 	Overlay0       = "#6C7086"
 	Ovelay1        = "#7F849C"
 	Base           = "#1E1E2E"
+	Grey           = "#808080"
 )
 
 // Style generation functions that use the current theme
@@ -163,4 +164,15 @@ func BorderFocusedColor() lipgloss.AdaptiveColor {
 // BorderDimColor returns the dim border color from the current theme
 func BorderDimColor() lipgloss.AdaptiveColor {
 	return theme.CurrentTheme().BorderDim()
+}
+
+// Bordered returns a style with a standard border
+func Bordered() lipgloss.Style {
+	tt := theme.CurrentTheme()
+	if tt == nil {
+		return Border()
+	}
+	return Regular().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(tt.BorderNormal())
 }

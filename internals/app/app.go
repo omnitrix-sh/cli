@@ -13,12 +13,12 @@ import (
 	"github.com/omnitrix-sh/cli/internals/db"
 	"github.com/omnitrix-sh/cli/internals/format"
 	"github.com/omnitrix-sh/cli/internals/history"
-	"github.com/omnitrix-sh/cli/internals/llm/agent"
+	"github.com/omnitrix-sh/cli/internals/llm/agents"
 	"github.com/omnitrix-sh/cli/internals/logging"
 	"github.com/omnitrix-sh/cli/internals/lsp"
 	"github.com/omnitrix-sh/cli/internals/message"
-	"github.com/omnitrix-sh/cli/internals/permission"
-	"github.com/omnitrix-sh/cli/internals/session"
+	"github.com/omnitrix-sh/cli/internals/permissions"
+	"github.com/omnitrix-sh/cli/internals/sessions"
 	"github.com/omnitrix-sh/cli/internals/tui/theme"
 )
 
