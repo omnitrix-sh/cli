@@ -36,6 +36,7 @@ require (
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
+	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 )
 
 require (
