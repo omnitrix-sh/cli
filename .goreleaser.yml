@@ -1,0 +1,64 @@
+version: 2
+project_name: omnitrix
+before:
+  hooks:
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/omnitrix-sh/cli/internal/version.Version={{.Version}}
+    main: ./main.go
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      omnitrix-
+      {{- if eq .Os "darwin" }}mac-
+      {{- else if eq .Os "windows" }}windows-
+      {{- else if eq .Os "linux" }}linux-{{end}}
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "#86" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+checksum:
+  name_template: "checksums.txt"
+snapshot:
+  name_template: "0.0.0-{{ .Timestamp }}"
+# Disable AUR and Homebrew publishing for personal repo
+# aurs:
+#   - name: omnitrix
+#     homepage: "https://github.com/omnitrix-sh/cli"
+# brews:
+#   - repository:
+#       owner: omnitrix-sh
+nfpms:
+  - maintainer: "Vivek Chavan <vivekchavan382@gmail.com>"
+    description: terminal based AI agent that can build anything
+    formats:
+      - deb
+      - rpm
+    file_name_template: >-
+      {{ .ProjectName }}-
+      {{- if eq .Os "darwin" }}mac
+      {{- else }}{{ .Os }}{{ end }}-{{ .Arch }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^doc:"
+      - "^test:"
+      - "^ci:"
+      - "^ignore:"
+      - "^example:"
+      - "^wip:"
